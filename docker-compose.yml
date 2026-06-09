@@ -1,0 +1,15 @@
+services:
+  agent:
+    build: ./agent
+    restart: unless-stopped
+    volumes:
+      - ./workspace:/home/agent/workspace
+      - codex-home:/home/agent/.codex
+    environment:
+      - CODEX_HOME=/home/agent/.codex
+      - HOST_UID=${HOST_UID}
+    ports:
+      - "8001:80"
+
+volumes:
+  codex-home:
