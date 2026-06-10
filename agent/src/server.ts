@@ -1,13 +1,10 @@
-import { fork } from "child_process";
-import path from "path";
-
 import { serve, upgradeWebSocket } from "@hono/node-server";
 import { getConnInfo } from "@hono/node-server/conninfo";
 import { Hono } from "hono";
 import { WebSocketServer } from "ws";
 import { z } from "zod";
 
-import { Agent } from "./agent";
+import { Agent, PromptOptions, promptOptionsSchema } from "./agent";
 
 const agent = new Agent();
 const app = new Hono();
@@ -20,6 +17,10 @@ const websocketRequestSchema = z.discriminatedUnion("type", [
     type: z.literal("prompt"),
     message: z.string(),
   }),
+  z.object({
+    type: z.literal("config"),
+    config: promptOptionsSchema,
+  })
 ]);
 
 // Block any local server access
@@ -36,14 +37,13 @@ app.use("*", async (c, next) => {
 app.get("/", upgradeWebSocket(async (c) => {
 
   let unsubscribe = () => {};
+  let promptOptions: PromptOptions = {};
 
   return {
     onOpen: async (event, ws) => {
       unsubscribe = agent.subscribe((event) => {
         ws.send(JSON.stringify(event));
       });
-
-      
     },
     onMessage: (event, ws) => {
       try {
@@ -61,7 +61,12 @@ app.get("/", upgradeWebSocket(async (c) => {
         if (data.type === "abort") {
           agent.abort();
         } else if (data.type === "prompt") {
-          agent.prompt(data.message);
+          console.log("Sending prompt:", data.message);
+          console.log("With options:", JSON.stringify(promptOptions, null, 2));
+          agent.prompt(data.message, promptOptions);
+        } else if (data.type === "config") {
+          console.log("Updating agent config:", JSON.stringify(data.config, null, 2));
+          promptOptions = data.config;
         }
       } catch (err) {
         console.error("Error handling message:", err);

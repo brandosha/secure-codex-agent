@@ -2,7 +2,7 @@ import { readFileSync, writeFileSync } from "fs";
 
 import { Codex, CodexOptions, Thread, ThreadEvent, ThreadOptions } from "@openai/codex-sdk";
 
-import { agentRequestMessageSchema, AgentRequestMessage } from "./agent";
+import { agentRequestMessageSchema, AgentRequestMessage, PromptOptions } from "./agent";
 import { PubSub } from "./PubSub";
 
 if (!process.send) {
@@ -12,10 +12,6 @@ if (!process.send) {
 
 const CODEX_THREAD_ID_PATH = "/home/agent/codex_thread_id.txt";
 
-interface PromptOptions {
-  codex?: CodexOptions;
-  thread?: ThreadOptions;
-}
 
 class CodexPromptTask {
   thread: Thread;
@@ -149,6 +145,6 @@ process.on("message", async (message) => {
   if (data.type === "abort") {
     agent.abort();
   } else if (data.type === "prompt") {
-    agent.prompt(data.message);
+    agent.prompt(data.message, data.options);
   }
 });

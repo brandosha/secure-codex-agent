@@ -10,6 +10,16 @@ services:
       - HOST_UID=${HOST_UID}
     ports:
       - "8001:80"
+  tools:
+    build: ./tools
+    restart: unless-stopped
+    volumes:
+      - ./workspace:/home/agent/workspace
+      - ./tools:/home/agent/app
+    environment:
+      - HOST_UID=${HOST_UID}
+    ports:
+      - "8002:80"
 
 volumes:
   codex-home:

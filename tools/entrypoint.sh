@@ -9,8 +9,10 @@ if [ "$(id -u agent)" -ne "$TARGET_UID" ]; then
     echo "Updating agent UID to match host: $TARGET_UID"
     usermod -u "$TARGET_UID" agent
     # Fix ownership of the home directory if needed
-    chown -R agent:agent /home/agent
+    # chown -R agent:agent /home/agent
 fi
 
+# Run the requested container command as 'agent'
+cd /home/agent/app
 export CI=true
-exec pnpm run start
+exec gosu agent pnpm run start:watch

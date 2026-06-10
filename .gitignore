@@ -1,5 +1,8 @@
 node_modules/
+.pnpm-store/
 
 .env
 
 workspace/
+
+.DS_Store
