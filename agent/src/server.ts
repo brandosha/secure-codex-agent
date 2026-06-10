@@ -1,6 +1,8 @@
 import { serve, upgradeWebSocket } from "@hono/node-server";
 import { getConnInfo } from "@hono/node-server/conninfo";
+import { ThreadEvent } from "@openai/codex-sdk";
 import { Hono } from "hono";
+import { WSContext } from "hono/ws";
 import { WebSocketServer } from "ws";
 import { z } from "zod";
 
@@ -23,6 +25,16 @@ const websocketRequestSchema = z.discriminatedUnion("type", [
   })
 ]);
 
+type WebsocketEvent = ThreadEvent | {
+  type: "request.error";
+  message: string;
+  issues: any[];
+}
+
+function sendEvent(ws: WSContext, event: WebsocketEvent) {
+  ws.send(JSON.stringify(event));
+}
+
 // Block any local server access
 app.use("*", async (c, next) => {
   const connInfo = getConnInfo(c);
@@ -42,18 +54,18 @@ app.get("/", upgradeWebSocket(async (c) => {
   return {
     onOpen: async (event, ws) => {
       unsubscribe = agent.subscribe((event) => {
-        ws.send(JSON.stringify(event));
+        sendEvent(ws, event);
       });
     },
     onMessage: (event, ws) => {
       try {
         const parsedRequest = websocketRequestSchema.safeParse(JSON.parse(event.data.toString()));
         if (!parsedRequest.success) {
-          ws.send(JSON.stringify({
+          sendEvent(ws, {
             type: "request.error",
             message: "Invalid websocket request",
             issues: parsedRequest.error.issues,
-          }));
+          });
           return;
         }
 

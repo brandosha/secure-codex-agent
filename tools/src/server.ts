@@ -2,7 +2,7 @@ import { serve } from "@hono/node-server";
 import { Hono } from "hono";
 import { WebSocketServer } from "ws";
 
-export const server = new Hono();
+export const server = new Hono<{ Variables: Record<string, unknown> }>();
 
 
 export function startServer() {

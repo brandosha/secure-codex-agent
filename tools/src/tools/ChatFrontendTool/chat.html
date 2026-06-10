@@ -6,6 +6,29 @@
   <title>Chat - Secure Agent</title>
 </head>
 <body>
-  
+  <h1>Chat Frontend</h1>
+  <script>
+    var chat = {
+      ws: null,
+      sendPrompt(input) {
+        if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+          this.ws.send(JSON.stringify({ type: "prompt", input }));
+        } else {
+          console.error("WebSocket is not open. Unable to send prompt.");
+        }
+      }
+    };
+
+    document.addEventListener("DOMContentLoaded", async () => {
+      const response = await fetch("/chat/ws-token");
+      const { token } = await response.json();
+      const ws = new WebSocket(`/chat/ws?token=${token}`);
+      ws.addEventListener("message", (event) => {
+        console.log("Received message:", event.data);
+      });
+
+      chat.ws = ws;
+    });
+  </script>
 </body>
 </html>

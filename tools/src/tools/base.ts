@@ -1,15 +1,16 @@
 import { McpServer, WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/server";
-import { Context, Hono } from "hono";
+import { Context } from "hono";
 
 import { agent, Agent } from "../agent";
 import { server, startServer } from "../server";
 
 export const WORKSPACE_PATH = "/home/agent/workspace";
+export type Server = typeof server;
 
 export abstract class Tool {
-  start: (server: Hono, agent: Agent) => void;
+  start: (server: Server, agent: Agent) => void;
 
-  constructor(start: (server: Hono, agent: Agent) => void) {
+  constructor(start: (server: Server, agent: Agent) => void) {
     this.start = start;
   }
 }
