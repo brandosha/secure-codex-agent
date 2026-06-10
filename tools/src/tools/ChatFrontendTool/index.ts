@@ -22,6 +22,11 @@ const defaultOptions: ChatFrontendToolOptions = {
   // Set default values for options here
 };
 
+const chatEventsQuerySchema = z.object({
+  limit: z.coerce.number().int().min(1).max(200).default(50),
+  offset: z.coerce.number().int().min(0).default(0),
+});
+
 export class ChatFrontendTool extends Tool {
   constructor(options: ChatFrontendToolOptions = defaultOptions) {
     super((server, agent) => {
@@ -32,6 +37,20 @@ export class ChatFrontendTool extends Tool {
         const chatHtmlPath = path.join(import.meta.dirname, "chat.html");
         const chatHtml = await fs.readFile(chatHtmlPath, "utf-8");
         return c.html(chatHtml);
+      });
+
+      server.use("/chat/events", authMiddleware);
+      server.get("/chat/events", async (c) => {
+        const query = chatEventsQuerySchema.parse({
+          limit: c.req.query("limit") ?? undefined,
+          offset: c.req.query("offset") ?? undefined,
+        });
+
+        return c.json({
+          events: agent.listEvents(query.limit, query.offset).reverse(),
+          limit: query.limit,
+          offset: query.offset,
+        });
       });
 
 

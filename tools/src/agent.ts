@@ -1,7 +1,10 @@
 import type { ThreadEvent } from "@openai/codex-sdk";
+import { desc } from "drizzle-orm";
 import { WebSocket } from "ws";
 import { z } from "zod";
 
+import { db } from "./db";
+import { agentEvents } from "./db/schema";
 import { PubSub } from "./PubSub";
 
 export type AgentEvent = ThreadEvent | {
@@ -17,6 +20,12 @@ export type AgentEvent = ThreadEvent | {
   from: string;
 }
 
+export interface PersistedAgentEvent {
+  id: number;
+  eventType: string;
+  rawJson: AgentEvent;
+}
+
 export class Agent extends PubSub<AgentEvent> {
   private _ws: WebSocket;
   private _ready: Promise<void>;
@@ -29,9 +38,9 @@ export class Agent extends PubSub<AgentEvent> {
     });
     this._ws.on("message", (data) => {
       try {
-        const message = JSON.parse(data.toString());
+        const message = JSON.parse(data.toString()) as AgentEvent;
         console.log("Received message:", message);
-        this.publish(message);
+        this.#recordAndPublish(message);
       } catch (err) {
         console.error("Error parsing message:", err, data);
       }
@@ -48,13 +57,55 @@ export class Agent extends PubSub<AgentEvent> {
   }
 
   prompt(message: string, from: string) {
-    this.publish({ type: "input.prompt", message, from });
+    const event: AgentEvent = { type: "input.prompt", message, from };
+    if (!this.#recordAndPublish(event)) {
+      return;
+    }
     this._send({ type: "prompt", message });
   }
 
   abort(from: string) {
-    this.publish({ type: "input.abort", from });
+    const event: AgentEvent = { type: "input.abort", from };
+    if (!this.#recordAndPublish(event)) {
+      return;
+    }
     this._send({ type: "abort" });
+  }
+
+  listEvents(limit: number, offset = 0): PersistedAgentEvent[] {
+    const safeLimit = Math.max(0, Math.floor(limit));
+    const safeOffset = Math.max(0, Math.floor(offset));
+
+    if (safeLimit === 0) {
+      return [];
+    }
+
+    return db
+      .select()
+      .from(agentEvents)
+      .orderBy(desc(agentEvents.id))
+      .limit(safeLimit)
+      .offset(safeOffset)
+      .all()
+      .map((row) => ({
+        id: row.id,
+        eventType: row.eventType,
+        rawJson: JSON.parse(row.rawJson) as AgentEvent,
+      }));
+  }
+
+  #recordAndPublish(event: AgentEvent) {
+    try {
+      db.insert(agentEvents).values({
+        eventType: event.type,
+        rawJson: JSON.stringify(event),
+      }).run();
+      this.publish(event);
+      return true;
+    } catch (err) {
+      console.error("Error persisting agent event:", err, event);
+      return false;
+    }
   }
 }
 

@@ -694,13 +694,50 @@
       return article;
     }
 
-    function appendEvent(event) {
+    function appendEvent(event, options = {}) {
+      const shouldScroll = options.scroll !== false;
       removeEmptyState();
       const info = extractMessageEvent(event);
       const node = info ? createMessageEvent(event, info) : createJsonEvent(event);
       elements.timeline.appendChild(node);
       eventCount += 1;
       updateEventCount();
+      if (shouldScroll) {
+        scrollTimeline();
+      }
+    }
+
+    async function hydrateHistory() {
+      const params = new URLSearchParams({
+        limit: "50",
+        offset: "0",
+      });
+      const response = await fetch(`/chat/events?${params.toString()}`);
+      if (!response.ok) {
+        throw new Error(`Failed to fetch event history: ${response.status}`);
+      }
+
+      const payload = await response.json();
+      const events = Array.isArray(payload.events) ? payload.events : [];
+
+      elements.timeline.replaceChildren();
+      elements.emptyState = null;
+      eventCount = 0;
+
+      if (events.length === 0) {
+        elements.emptyState = document.createElement("div");
+        elements.emptyState.className = "empty-state";
+        elements.emptyState.id = "empty-state";
+        elements.emptyState.textContent = "Events will appear here once the websocket connects and the agent starts responding.";
+        elements.timeline.appendChild(elements.emptyState);
+        updateEventCount();
+        return;
+      }
+
+      for (const persistedEvent of events) {
+        appendEvent(persistedEvent.rawJson, { scroll: false });
+      }
+
       scrollTimeline();
     }
 
@@ -806,6 +843,14 @@
       });
 
       updateEventCount();
+      try {
+        await hydrateHistory();
+      } catch (error) {
+        appendEvent({
+          type: "frontend.history_error",
+          message: error instanceof Error ? error.message : String(error),
+        });
+      }
       connect();
     });
   </script>
