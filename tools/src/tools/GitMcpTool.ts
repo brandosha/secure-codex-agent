@@ -3,7 +3,7 @@ import path from "path";
 import { McpServer } from "@modelcontextprotocol/server";
 import { z } from "zod";
 
-import { McpTool, WORKSPACE_PATH } from "../tools";
+import { McpTool, WORKSPACE_PATH } from "./base";
 import { execFile, mcpTextResult } from "../utils";
 
 

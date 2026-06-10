@@ -1,7 +1,7 @@
 import { upgradeWebSocket } from "@hono/node-server";
 
 import { Chat } from "./chat";
-import { Tool } from "../../tools";
+import { Tool } from "../base";
 
 interface ChatFrontendToolOptions {
   // Define any options for the ChatFrontendTool here

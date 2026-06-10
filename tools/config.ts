@@ -1,5 +1,5 @@
-import { agentTools } from "./src/tools";
-import { ChatFrontendTool, GitMcpTool } from "./src/tools/all";
+import { agentTools, ChatFrontendTool, GitMcpTool } from "./src/tools";
+
 
 agentTools([
   new GitMcpTool({

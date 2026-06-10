@@ -1,6 +1,6 @@
 import { CronJob } from "cron";
 
-import { Tool } from "../tools";
+import { Tool } from "./base";
 
 export class CronTool extends Tool {
   constructor(

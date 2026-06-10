@@ -1,8 +1,8 @@
 import { McpServer, WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/server";
 import { Context, Hono } from "hono";
 
-import { agent, Agent } from "./agent";
-import { server, startServer } from "./server";
+import { agent, Agent } from "../agent";
+import { server, startServer } from "../server";
 
 export const WORKSPACE_PATH = "/home/agent/workspace";
 
