@@ -1,3 +1,5 @@
+import "dotenv/config";
+
 try {
   // @ts-ignore -- This is a dynamic import that may fail if the file doesn't exist, which is expected behavior.
   await import("../config");  

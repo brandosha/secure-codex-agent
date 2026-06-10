@@ -1,5 +1,5 @@
 import { agentTools } from "./src/tools";
-import { GitMcpTool } from "./src/tools/all";
+import { ChatFrontendTool, GitMcpTool } from "./src/tools/all";
 
 agentTools([
   new GitMcpTool({
@@ -8,8 +8,5 @@ agentTools([
       block: ["main", "master", "prod", "production"],
     },
   }),
+  new ChatFrontendTool(),
 ]);
-
-// Testing
-import { agent } from "./src/agent";
-agent.prompt("What mcp tools are available?");
