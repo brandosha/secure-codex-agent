@@ -8,8 +8,6 @@ services:
     environment:
       - CODEX_HOME=/home/agent/.codex
       - HOST_UID=${HOST_UID}
-    ports:
-      - "8001:80"
   tools:
     build: ./tools
     restart: unless-stopped

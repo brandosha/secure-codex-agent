@@ -2,10 +2,9 @@ import { McpServer, WebStandardStreamableHTTPServerTransport } from "@modelconte
 import { Context } from "hono";
 
 import { agent, Agent } from "../agent";
-import { server, startServer } from "../server";
+import { newServer, startServer, Server } from "../server";
 
 export const WORKSPACE_PATH = "/home/agent/workspace";
-export type Server = typeof server;
 
 export abstract class Tool {
   start: (server: Server, agent: Agent) => void;
@@ -63,17 +62,21 @@ export class McpTool extends EndpointTool {
 export function agentTools(tools: Tool[]) {
   const mcpServersConfig: Record<string, unknown> = {}
 
-  for (const tool of tools) {
-    tool.start(server, agent);
+  const publicServer = newServer();
+  const mcpServer = newServer();
 
+  for (const tool of tools) {
     if (tool instanceof McpTool) {
+      tool.start(mcpServer, agent);
       console.log(`Registered MCP tool: ${tool.name} `);
       mcpServersConfig[tool.name] = {
-        url: `http://tools${tool.route}`,
+        url: `http://tools:8000${tool.route}`,
         http_headers: {
           "Authorization": `Bearer ${mcpAuthToken}`,
         },
       };
+    } else {
+      tool.start(publicServer, agent);
     }
   }
 
@@ -85,5 +88,6 @@ export function agentTools(tools: Tool[]) {
     },
   });
 
-  startServer();
+  startServer(publicServer, { port: 80, enableWebsocket: true });
+  startServer(mcpServer, { port: 8000, enableWebsocket: false });
 }
