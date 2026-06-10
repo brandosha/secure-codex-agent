@@ -1,29 +1,38 @@
 import { McpServer, WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/server";
-import { Context } from "hono";
+import { Context, Hono } from "hono";
 
-import { agent } from "./agent";
+import { agent, Agent } from "./agent";
 import { server, startServer } from "./server";
 
 export const WORKSPACE_PATH = "/home/agent/workspace";
-export { agent };
 
-export class Tool {
+export abstract class Tool {
+  start: (server: Hono, agent: Agent) => void;
 
+  constructor(start: (server: Hono, agent: Agent) => void) {
+    this.start = start;
+  }
 }
 
-export class EndpointTool extends Tool {
-  route: string;
-  handler: (c: Context) => Promise<Response>;
-
-  constructor(route: string, handler: (c: Context) => Promise<Response>) {
+class EndpointTool extends Tool {
+  constructor(
+    public route: string,
+    handler: (c: Context) => Promise<Response>
+  ) {
     if (!route.startsWith("/")) {
       throw new Error("Route must start with '/'");
     }
 
-    super();
+    super((server, agent) => {
+      server.all(route, handler);
+    });
+  }
+}
 
-    this.route = route;
-    this.handler = handler;
+export class WebhookTool extends EndpointTool {
+  constructor(name: string, handler: (c: Context) => Promise<Response>) {
+    const route = `/webhook/${name}`;
+    super(route, handler);
   }
 }
 
@@ -54,12 +63,10 @@ export function agentTools(tools: Tool[]) {
   const mcpServersConfig: Record<string, unknown> = {}
 
   for (const tool of tools) {
-    if (tool instanceof EndpointTool) {
-      server.use(tool.route, tool.handler);
-    }
+    tool.start(server, agent);
 
     if (tool instanceof McpTool) {
-      console.log(`Registered MCP tool: ${tool.name} at route ${tool.route}`);
+      console.log(`Registered MCP tool: ${tool.name} `);
       mcpServersConfig[tool.name] = {
         url: `http://tools${tool.route}`,
         http_headers: {
