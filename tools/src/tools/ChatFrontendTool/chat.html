@@ -4,9 +4,459 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Chat - Secure Agent</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #0f172a;
+      --panel: rgba(15, 23, 42, 0.86);
+      --panel-strong: #111827;
+      --panel-soft: rgba(30, 41, 59, 0.88);
+      --border: rgba(148, 163, 184, 0.22);
+      --text: #e5eefb;
+      --muted: #94a3b8;
+      --accent: #38bdf8;
+      --accent-soft: rgba(56, 189, 248, 0.14);
+      --user: #1d4ed8;
+      --assistant: #0f766e;
+      --system: #7c3aed;
+      --error: #dc2626;
+      --warning: #d97706;
+      --shadow: 0 24px 60px rgba(2, 6, 23, 0.4);
+      --mono: "SFMono-Regular", "SF Mono", Monaco, Consolas, "Liberation Mono", monospace;
+      --sans: "Inter", "Segoe UI", sans-serif;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      font-family: var(--sans);
+      color: var(--text);
+      background:
+        radial-gradient(circle at top left, rgba(56, 189, 248, 0.18), transparent 30%),
+        radial-gradient(circle at top right, rgba(14, 165, 233, 0.12), transparent 22%),
+        linear-gradient(180deg, #020617 0%, #0f172a 42%, #111827 100%);
+    }
+
+    .shell {
+      width: min(1100px, calc(100vw - 32px));
+      margin: 24px auto;
+      display: grid;
+      grid-template-columns: 280px minmax(0, 1fr);
+      gap: 20px;
+      align-items: start;
+    }
+
+    .panel {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 24px;
+      box-shadow: var(--shadow);
+      backdrop-filter: blur(16px);
+    }
+
+    .sidebar {
+      padding: 22px;
+      position: sticky;
+      top: 24px;
+    }
+
+    .eyebrow {
+      margin: 0 0 8px;
+      font-size: 12px;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      color: var(--accent);
+    }
+
+    h1 {
+      margin: 0 0 12px;
+      font-size: 28px;
+      line-height: 1.1;
+    }
+
+    .sidebar p {
+      margin: 0;
+      color: var(--muted);
+      line-height: 1.55;
+    }
+
+    .status-card {
+      margin-top: 18px;
+      padding: 16px;
+      background: var(--panel-soft);
+      border: 1px solid var(--border);
+      border-radius: 18px;
+    }
+
+    .status-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      font-size: 14px;
+      color: var(--muted);
+    }
+
+    .status-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 8px 12px;
+      border-radius: 999px;
+      background: rgba(15, 23, 42, 0.75);
+      border: 1px solid var(--border);
+      color: var(--text);
+      font-weight: 600;
+    }
+
+    .status-dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 999px;
+      background: var(--muted);
+      box-shadow: 0 0 0 4px rgba(148, 163, 184, 0.12);
+    }
+
+    .status-pill[data-state="connected"] .status-dot {
+      background: #22c55e;
+      box-shadow: 0 0 0 4px rgba(34, 197, 94, 0.15);
+    }
+
+    .status-pill[data-state="connecting"] .status-dot {
+      background: #f59e0b;
+      box-shadow: 0 0 0 4px rgba(245, 158, 11, 0.15);
+    }
+
+    .status-pill[data-state="error"] .status-dot,
+    .status-pill[data-state="closed"] .status-dot {
+      background: #ef4444;
+      box-shadow: 0 0 0 4px rgba(239, 68, 68, 0.15);
+    }
+
+    .sidebar-actions {
+      margin-top: 18px;
+      display: grid;
+      gap: 10px;
+    }
+
+    button {
+      appearance: none;
+      border: 0;
+      border-radius: 14px;
+      font: inherit;
+      cursor: pointer;
+      transition: transform 120ms ease, background 120ms ease, opacity 120ms ease;
+    }
+
+    button:hover:not(:disabled) {
+      transform: translateY(-1px);
+    }
+
+    button:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+
+    .secondary-button {
+      padding: 12px 14px;
+      color: var(--text);
+      background: rgba(15, 23, 42, 0.88);
+      border: 1px solid var(--border);
+    }
+
+    .chat-panel {
+      min-height: calc(100vh - 48px);
+      display: grid;
+      grid-template-rows: auto minmax(0, 1fr) auto;
+      overflow: hidden;
+    }
+
+    .chat-header {
+      padding: 22px 24px 18px;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: end;
+      justify-content: space-between;
+      gap: 20px;
+    }
+
+    .chat-header h2 {
+      margin: 0;
+      font-size: 20px;
+    }
+
+    .chat-header p {
+      margin: 6px 0 0;
+      color: var(--muted);
+      font-size: 14px;
+    }
+
+    .event-count {
+      color: var(--muted);
+      font-size: 13px;
+      white-space: nowrap;
+    }
+
+    .timeline {
+      padding: 22px;
+      overflow-y: auto;
+      display: grid;
+      gap: 14px;
+      align-content: start;
+    }
+
+    .empty-state {
+      min-height: 240px;
+      display: grid;
+      place-items: center;
+      padding: 30px;
+      border: 1px dashed var(--border);
+      border-radius: 20px;
+      color: var(--muted);
+      text-align: center;
+      background: rgba(15, 23, 42, 0.45);
+    }
+
+    .event {
+      border-radius: 20px;
+      border: 1px solid var(--border);
+      background: rgba(15, 23, 42, 0.62);
+      overflow: hidden;
+    }
+
+    .event.message {
+      max-width: min(78ch, 100%);
+      background: rgba(15, 23, 42, 0.92);
+    }
+
+    .event.message.user {
+      margin-left: auto;
+      background: linear-gradient(180deg, rgba(29, 78, 216, 0.34), rgba(29, 78, 216, 0.2));
+      border-color: rgba(96, 165, 250, 0.28);
+    }
+
+    .event.message.assistant {
+      background: linear-gradient(180deg, rgba(15, 118, 110, 0.28), rgba(15, 118, 110, 0.14));
+      border-color: rgba(45, 212, 191, 0.24);
+    }
+
+    .event.message.system {
+      background: linear-gradient(180deg, rgba(124, 58, 237, 0.22), rgba(124, 58, 237, 0.1));
+      border-color: rgba(196, 181, 253, 0.2);
+    }
+
+    .event.message.error {
+      background: linear-gradient(180deg, rgba(220, 38, 38, 0.24), rgba(220, 38, 38, 0.1));
+      border-color: rgba(252, 165, 165, 0.24);
+    }
+
+    .event-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      padding: 14px 16px 8px;
+    }
+
+    .event-head strong {
+      font-size: 14px;
+    }
+
+    .event-meta {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      min-width: 0;
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    .event-type {
+      display: inline-flex;
+      align-items: center;
+      padding: 4px 8px;
+      border-radius: 999px;
+      background: rgba(148, 163, 184, 0.12);
+      color: var(--text);
+      font-family: var(--mono);
+      font-size: 11px;
+    }
+
+    .event-body {
+      padding: 0 16px 16px;
+    }
+
+    .message-text {
+      margin: 0;
+      white-space: pre-wrap;
+      word-break: break-word;
+      line-height: 1.6;
+      font-size: 15px;
+    }
+
+    .json-block {
+      margin: 0;
+      padding: 14px 16px 16px;
+      overflow-x: auto;
+      white-space: pre-wrap;
+      word-break: break-word;
+      border-top: 1px solid rgba(148, 163, 184, 0.12);
+      color: #cbd5e1;
+      font: 12px/1.6 var(--mono);
+      background: rgba(2, 6, 23, 0.42);
+    }
+
+    .composer {
+      padding: 18px 22px 22px;
+      border-top: 1px solid var(--border);
+      background: rgba(2, 6, 23, 0.3);
+    }
+
+    .composer-form {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto auto;
+      gap: 12px;
+    }
+
+    .composer textarea {
+      width: 100%;
+      min-height: 64px;
+      max-height: 220px;
+      resize: vertical;
+      padding: 16px 18px;
+      border-radius: 18px;
+      border: 1px solid var(--border);
+      background: rgba(15, 23, 42, 0.88);
+      color: var(--text);
+      font: inherit;
+      line-height: 1.5;
+      outline: none;
+      box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+    }
+
+    .composer textarea:focus {
+      border-color: rgba(56, 189, 248, 0.45);
+      box-shadow: 0 0 0 4px rgba(56, 189, 248, 0.14);
+    }
+
+    .primary-button {
+      padding: 0 18px;
+      min-width: 108px;
+      color: white;
+      background: linear-gradient(135deg, #0ea5e9, #2563eb);
+      box-shadow: 0 14px 30px rgba(37, 99, 235, 0.28);
+      font-weight: 700;
+    }
+
+    .danger-button {
+      padding: 0 18px;
+      min-width: 92px;
+      color: white;
+      background: linear-gradient(135deg, #f97316, #dc2626);
+      box-shadow: 0 14px 30px rgba(220, 38, 38, 0.22);
+      font-weight: 700;
+    }
+
+    .composer-help {
+      margin: 10px 4px 0;
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    @media (max-width: 960px) {
+      .shell {
+        width: min(100vw - 20px, 1100px);
+        margin: 10px auto;
+        grid-template-columns: 1fr;
+      }
+
+      .sidebar {
+        position: static;
+      }
+
+      .chat-panel {
+        min-height: calc(100vh - 20px);
+      }
+    }
+
+    @media (max-width: 720px) {
+      .chat-header {
+        align-items: start;
+        flex-direction: column;
+      }
+
+      .composer-form {
+        grid-template-columns: 1fr;
+      }
+
+      .primary-button,
+      .danger-button {
+        min-height: 48px;
+      }
+    }
+  </style>
 </head>
 <body>
-  <h1>Chat Frontend</h1>
+  <div class="shell">
+    <aside class="panel sidebar">
+      <p class="eyebrow">Secure Codex Agent</p>
+      <h1>Live Event Console</h1>
+      <p>
+        Send prompts directly to the agent and watch the full event stream come back in real time.
+        Message-like events are highlighted, and everything else stays visible as raw JSON.
+      </p>
+
+      <div class="status-card">
+        <div class="status-row">
+          <span>Connection</span>
+          <span class="status-pill" id="status-pill" data-state="connecting">
+            <span class="status-dot"></span>
+            <span id="status-text">Connecting</span>
+          </span>
+        </div>
+      </div>
+
+      <div class="sidebar-actions">
+        <button class="secondary-button" id="reconnect-button" type="button">Reconnect</button>
+        <button class="secondary-button" id="clear-button" type="button">Clear Events</button>
+      </div>
+    </aside>
+
+    <main class="panel chat-panel">
+      <header class="chat-header">
+        <div>
+          <h2>Event Timeline</h2>
+          <p>Important events render as chat cards. Everything else falls back to formatted JSON.</p>
+        </div>
+        <div class="event-count" id="event-count">0 events</div>
+      </header>
+
+      <section class="timeline" id="timeline">
+        <div class="empty-state" id="empty-state">
+          Events will appear here once the websocket connects and the agent starts responding.
+        </div>
+      </section>
+
+      <footer class="composer">
+        <form class="composer-form" id="composer-form">
+          <textarea
+            id="prompt-input"
+            placeholder="Ask the agent something..."
+            autocomplete="off"
+            spellcheck="false"
+          ></textarea>
+          <button class="primary-button" id="send-button" type="submit">Send</button>
+          <button class="danger-button" id="abort-button" type="button">Stop</button>
+        </form>
+        <div class="composer-help">Press Cmd/Ctrl + Enter to send quickly.</div>
+      </footer>
+    </main>
+  </div>
+
   <script>
     var chat = {
       ws: null,
@@ -16,18 +466,347 @@
         } else {
           console.error("WebSocket is not open. Unable to send prompt.");
         }
+      },
+      sendAbort() {
+        if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+          this.ws.send(JSON.stringify({ type: "abort" }));
+        } else {
+          console.error("WebSocket is not open. Unable to send abort.");
+        }
       }
     };
 
+    const elements = {};
+    let eventCount = 0;
+
+    function setStatus(state, label) {
+      elements.statusPill.dataset.state = state;
+      elements.statusText.textContent = label;
+    }
+
+    function updateEventCount() {
+      elements.eventCount.textContent = `${eventCount} event${eventCount === 1 ? "" : "s"}`;
+    }
+
+    function removeEmptyState() {
+      if (elements.emptyState) {
+        elements.emptyState.remove();
+        elements.emptyState = null;
+      }
+    }
+
+    function scrollTimeline() {
+      elements.timeline.scrollTop = elements.timeline.scrollHeight;
+    }
+
+    function formatTime(value) {
+      return new Date(value).toLocaleTimeString([], {
+        hour: "2-digit",
+        minute: "2-digit",
+        second: "2-digit"
+      });
+    }
+
+    function prettyJson(data) {
+      return JSON.stringify(data, null, 2);
+    }
+
+    function getType(event) {
+      return typeof event.type === "string" ? event.type : "event";
+    }
+
+    function getRoleLabel(role) {
+      if (role === "user") return "You";
+      if (role === "assistant") return "Agent";
+      if (role === "system") return "System";
+      if (role === "error") return "Error";
+      return role || "Event";
+    }
+
+    function collectTextFromContent(content) {
+      if (!Array.isArray(content)) return [];
+
+      const fragments = [];
+      for (const item of content) {
+        if (!item || typeof item !== "object") continue;
+
+        if (typeof item.text === "string" && item.text.trim()) {
+          fragments.push(item.text);
+        }
+
+        if (item.type === "output_text" && typeof item.text === "string" && item.text.trim()) {
+          fragments.push(item.text);
+        }
+
+        if (item.type === "input_text" && typeof item.text === "string" && item.text.trim()) {
+          fragments.push(item.text);
+        }
+
+        if (item.type === "text" && typeof item.text === "string" && item.text.trim()) {
+          fragments.push(item.text);
+        }
+      }
+
+      return fragments;
+    }
+
+    function extractMessageEvent(event) {
+      const type = getType(event);
+
+      if (type === "input.prompt") {
+        return {
+          kind: "message",
+          role: "user",
+          title: "Prompt",
+          text: typeof event.message === "string" ? event.message : "",
+        };
+      }
+
+      if (type === "input.abort") {
+        return {
+          kind: "message",
+          role: "system",
+          title: "Abort requested",
+          text: event.from ? `Abort requested by ${event.from}.` : "Abort requested.",
+        };
+      }
+
+      if (type === "request.error") {
+        return {
+          kind: "message",
+          role: "error",
+          title: "Request error",
+          text: typeof event.message === "string" ? event.message : "The agent returned an error.",
+        };
+      }
+
+      if (typeof event.message === "string" && event.message.trim()) {
+        const role = type.includes("error") ? "error" : type.includes("assistant") ? "assistant" : "system";
+        return {
+          kind: "message",
+          role: role,
+          title: getType(event),
+          text: event.message,
+        };
+      }
+
+      const item = event.item;
+      if (item && typeof item === "object") {
+        if (typeof item.text === "string" && item.text.trim()) {
+          const role = item.type === "agent_message" ? "assistant" : (type.includes("assistant") ? "assistant" : "system");
+          return {
+            kind: "message",
+            role: role,
+            title: typeof item.type === "string" ? item.type : getType(event),
+            text: item.text,
+          };
+        }
+
+        const role = typeof item.role === "string" ? item.role : (type.includes("assistant") ? "assistant" : null);
+        const contentText = collectTextFromContent(item.content).join("\n\n").trim();
+        if (role && contentText) {
+          return {
+            kind: "message",
+            role: role,
+            title: typeof item.type === "string" ? item.type : getType(event),
+            text: contentText,
+          };
+        }
+      }
+
+      const directContentText = collectTextFromContent(event.content).join("\n\n").trim();
+      if (directContentText) {
+        return {
+          kind: "message",
+          role: type.includes("assistant") ? "assistant" : "system",
+          title: getType(event),
+          text: directContentText,
+        };
+      }
+
+      return null;
+    }
+
+    function createMessageEvent(event, info) {
+      const article = document.createElement("article");
+      article.className = `event message ${info.role}`;
+
+      const head = document.createElement("div");
+      head.className = "event-head";
+
+      const strong = document.createElement("strong");
+      strong.textContent = info.title || getRoleLabel(info.role);
+
+      const meta = document.createElement("div");
+      meta.className = "event-meta";
+
+      const type = document.createElement("span");
+      type.className = "event-type";
+      type.textContent = getType(event);
+
+      const time = document.createElement("span");
+      time.textContent = formatTime(Date.now());
+
+      meta.append(type, time);
+      head.append(strong, meta);
+
+      const body = document.createElement("div");
+      body.className = "event-body";
+
+      const text = document.createElement("p");
+      text.className = "message-text";
+      text.textContent = info.text;
+
+      body.append(text);
+      article.append(head, body);
+
+      return article;
+    }
+
+    function createJsonEvent(event) {
+      const article = document.createElement("article");
+      article.className = "event";
+
+      const head = document.createElement("div");
+      head.className = "event-head";
+
+      const strong = document.createElement("strong");
+      strong.textContent = getType(event);
+
+      const meta = document.createElement("div");
+      meta.className = "event-meta";
+
+      const type = document.createElement("span");
+      type.className = "event-type";
+      type.textContent = getType(event);
+
+      const time = document.createElement("span");
+      time.textContent = formatTime(Date.now());
+
+      meta.append(type, time);
+      head.append(strong, meta);
+
+      const pre = document.createElement("pre");
+      pre.className = "json-block";
+      pre.textContent = prettyJson(event);
+
+      article.append(head, pre);
+      return article;
+    }
+
+    function appendEvent(event) {
+      removeEmptyState();
+      const info = extractMessageEvent(event);
+      const node = info ? createMessageEvent(event, info) : createJsonEvent(event);
+      elements.timeline.appendChild(node);
+      eventCount += 1;
+      updateEventCount();
+      scrollTimeline();
+    }
+
+    async function connect() {
+      setStatus("connecting", "Connecting");
+
+      try {
+        const response = await fetch("/chat/ws-token");
+        if (!response.ok) {
+          throw new Error(`Failed to fetch websocket token: ${response.status}`);
+        }
+
+        const { token } = await response.json();
+        const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
+        const socketUrl = `${protocol}//${window.location.host}/chat/ws?token=${encodeURIComponent(token)}`;
+
+        if (chat.ws) {
+          chat.ws.close();
+        }
+
+        const ws = new WebSocket(socketUrl);
+        chat.ws = ws;
+
+        ws.addEventListener("open", () => {
+          setStatus("connected", "Connected");
+        });
+
+        ws.addEventListener("message", (event) => {
+          try {
+            appendEvent(JSON.parse(event.data));
+          } catch (error) {
+            appendEvent({
+              type: "frontend.parse_error",
+              message: "Failed to parse websocket event payload.",
+              raw: String(event.data),
+              error: String(error),
+            });
+          }
+        });
+
+        ws.addEventListener("close", () => {
+          setStatus("closed", "Disconnected");
+        });
+
+        ws.addEventListener("error", () => {
+          setStatus("error", "Socket Error");
+        });
+      } catch (error) {
+        setStatus("error", "Connection Failed");
+        appendEvent({
+          type: "frontend.connection_error",
+          message: error instanceof Error ? error.message : String(error),
+        });
+      }
+    }
+
     document.addEventListener("DOMContentLoaded", async () => {
-      const response = await fetch("/chat/ws-token");
-      const { token } = await response.json();
-      const ws = new WebSocket(`/chat/ws?token=${token}`);
-      ws.addEventListener("message", (event) => {
-        console.log("Received message:", event.data);
+      elements.timeline = document.getElementById("timeline");
+      elements.emptyState = document.getElementById("empty-state");
+      elements.eventCount = document.getElementById("event-count");
+      elements.statusPill = document.getElementById("status-pill");
+      elements.statusText = document.getElementById("status-text");
+      elements.reconnectButton = document.getElementById("reconnect-button");
+      elements.clearButton = document.getElementById("clear-button");
+      elements.composerForm = document.getElementById("composer-form");
+      elements.promptInput = document.getElementById("prompt-input");
+      elements.sendButton = document.getElementById("send-button");
+      elements.abortButton = document.getElementById("abort-button");
+
+      elements.reconnectButton.addEventListener("click", () => {
+        connect();
       });
 
-      chat.ws = ws;
+      elements.clearButton.addEventListener("click", () => {
+        elements.timeline.replaceChildren();
+        elements.emptyState = document.createElement("div");
+        elements.emptyState.className = "empty-state";
+        elements.emptyState.id = "empty-state";
+        elements.emptyState.textContent = "Events will appear here once the websocket connects and the agent starts responding.";
+        elements.timeline.appendChild(elements.emptyState);
+        eventCount = 0;
+        updateEventCount();
+      });
+
+      elements.composerForm.addEventListener("submit", (event) => {
+        event.preventDefault();
+        const input = elements.promptInput.value.trim();
+        if (!input) return;
+        chat.sendPrompt(input);
+        elements.promptInput.value = "";
+        elements.promptInput.focus();
+      });
+
+      elements.abortButton.addEventListener("click", () => {
+        chat.sendAbort();
+      });
+
+      elements.promptInput.addEventListener("keydown", (event) => {
+        if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) {
+          event.preventDefault();
+          elements.composerForm.requestSubmit();
+        }
+      });
+
+      updateEventCount();
+      connect();
     });
   </script>
 </body>
