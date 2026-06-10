@@ -5,6 +5,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     git \
     gosu \
     ca-certificates \
+    openssh-client \
     && rm -rf /var/lib/apt/lists/*
 
 RUN corepack enable pnpm

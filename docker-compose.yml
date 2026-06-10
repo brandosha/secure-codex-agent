@@ -14,6 +14,7 @@ services:
     volumes:
       - ./workspace:/home/agent/workspace
       - ./tools:/home/agent/app
+      - tools-ssh:/home/agent/.ssh
     environment:
       - HOST_UID=${HOST_UID}
     ports:
@@ -21,3 +22,4 @@ services:
 
 volumes:
   codex-home:
+  tools-ssh:

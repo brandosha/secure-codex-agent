@@ -50,6 +50,10 @@ export class Agent extends PubSub<ThreadEvent> {
       execPath: tsxPath,
       uid: parseInt(HOST_UID, 10),
       gid: parseInt(HOST_UID, 10),
+      env: {
+        ...process.env,
+        HOME: "/home/agent",
+      }
     });
 
     this._agentProcess.on("message", (message: ThreadEvent) => {
