@@ -1,4 +1,4 @@
-import { agentTools, ChatFrontendTool, GitMcpTool } from "./src/tools";
+import { agentTools, ChatFrontendTool, GitMcpTool, TrelloMcpTool } from "./src/tools";
 
 
 agentTools([
@@ -9,4 +9,6 @@ agentTools([
     },
   }),
   new ChatFrontendTool(),
+  new TrelloMcpTool(),
 ]);
+

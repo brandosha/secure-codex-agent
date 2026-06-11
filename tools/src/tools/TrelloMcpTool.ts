@@ -10,12 +10,16 @@ export class TrelloMcpTool extends McpTool {
 }
 
 function trelloMcpServer() {
-
   const { TRELLO_API_KEY, TRELLO_TOKEN } = process.env;
 
   if (!TRELLO_API_KEY || !TRELLO_TOKEN) {
     throw new Error("TRELLO_API_KEY and TRELLO_TOKEN environment variables must be set");
   }
+
+  const currentMemberIdPromise = getCurrentMemberId({
+    apiKey: TRELLO_API_KEY,
+    token: TRELLO_TOKEN,
+  });
 
   const mcp = new McpServer({
     name: "Trello MCP Tool",
@@ -29,16 +33,23 @@ function trelloMcpServer() {
       method: z.enum(["GET", "POST", "PUT", "DELETE"]),
       body: z.record(z.string(), z.any()).optional(),
     }),
-  }, async (input, ctx) => {
-
+  }, async (input) => {
     try {
+      await authorizeTrelloRequest({
+        apiKey: TRELLO_API_KEY,
+        token: TRELLO_TOKEN,
+        method: input.method,
+        endpoint: input.endpoint,
+        currentMemberIdPromise,
+      });
+
       const response = await makeTrelloApiRequest({
         method: input.method,
         endpoint: input.endpoint,
         body: input.body,
         apiKey: TRELLO_API_KEY,
         token: TRELLO_TOKEN,
-        clientIdentifier: `TrelloMcpTool`,
+        clientIdentifier: "TrelloMcpTool",
       });
 
       return {
@@ -60,7 +71,7 @@ function trelloMcpServer() {
           text: "Failed to make Trello API request",
         }, {
           type: "text",
-          text: `Error: ${err}`,
+          text: `Error: ${err instanceof Error ? err.message : String(err)}`,
         }],
       };
     }
@@ -70,6 +81,7 @@ function trelloMcpServer() {
 }
 
 export const TRELLO_CLIENT_IDENTIFIER = "TrelloAgent";
+
 interface TrelloApiRequest {
   apiKey: string;
   token: string;
@@ -78,11 +90,150 @@ interface TrelloApiRequest {
   body?: any;
   clientIdentifier?: string;
 }
+
+interface TrelloAuthRequest {
+  apiKey: string;
+  token: string;
+  method: TrelloMethod;
+  endpoint: string;
+  currentMemberIdPromise: Promise<string>;
+}
+
+interface TrelloCardMembersResponse {
+  idMembers?: string[];
+}
+
+interface TrelloMemberResponse {
+  id?: string;
+}
+
+type TrelloMethod = "GET" | "POST" | "PUT" | "DELETE";
+
+export class TrelloAuthorizationError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "TrelloAuthorizationError";
+  }
+}
+
+type TrelloEndpointPolicy =
+  | { kind: "readonly" }
+  | { kind: "comment"; cardId: string }
+  | { kind: "card-write"; cardId: string };
+
+export function classifyTrelloRequest(method: TrelloMethod, endpoint: string): TrelloEndpointPolicy {
+  if (method === "GET") {
+    return { kind: "readonly" };
+  }
+
+  const { segments } = parseTrelloEndpoint(endpoint);
+  if (segments.length < 2 || segments[0] !== "cards" || !segments[1]) {
+    throw new TrelloAuthorizationError("Mutating Trello requests are only allowed for card endpoints.");
+  }
+
+  const cardId = segments[1];
+  if (method === "POST" && segments.length === 4 && segments[2] === "actions" && segments[3] === "comments") {
+    return { kind: "comment", cardId };
+  }
+
+  return { kind: "card-write", cardId };
+}
+
+export function parseTrelloEndpoint(endpoint: string) {
+  const normalized = normalizeTrelloEndpoint(endpoint);
+  const url = new URL(normalized, "https://api.trello.com");
+  const segments = url.pathname.split("/").filter(Boolean);
+
+  if (segments[0] === "1") {
+    segments.shift();
+  }
+
+  return {
+    endpoint: normalized,
+    segments,
+  };
+}
+
+export function normalizeTrelloEndpoint(endpoint: string) {
+  const trimmed = endpoint.trim();
+  if (!trimmed) {
+    throw new TrelloAuthorizationError("Trello endpoint cannot be empty.");
+  }
+
+  const withoutOrigin = trimmed.replace(/^https?:\/\/[^/]+/i, "");
+  return withoutOrigin.startsWith("/") ? withoutOrigin : `/${withoutOrigin}`;
+}
+
+export async function authorizeTrelloRequest(request: TrelloAuthRequest) {
+  const policy = classifyTrelloRequest(request.method, request.endpoint);
+  if (policy.kind === "readonly" || policy.kind === "comment") {
+    return policy;
+  }
+
+  let currentMemberId: string;
+  try {
+    currentMemberId = await request.currentMemberIdPromise;
+  } catch (error) {
+    throw new TrelloAuthorizationError(
+      `Unable to resolve current Trello member identity: ${error instanceof Error ? error.message : String(error)}`,
+    );
+  }
+
+  const isAssigned = await isCardAssignedToMember({
+    apiKey: request.apiKey,
+    token: request.token,
+    cardId: policy.cardId,
+    memberId: currentMemberId,
+  });
+
+  if (!isAssigned) {
+    throw new TrelloAuthorizationError(
+      `Card ${policy.cardId} is not assigned to the current Trello user, so this mutation is blocked.`,
+    );
+  }
+
+  return policy;
+}
+
+export async function getCurrentMemberId(credentials: { apiKey: string; token: string }) {
+  const response = await makeTrelloApiRequest({
+    apiKey: credentials.apiKey,
+    token: credentials.token,
+    method: "GET",
+    endpoint: "/members/me?fields=id",
+    clientIdentifier: "TrelloMcpTool",
+  }) as TrelloMemberResponse;
+
+  if (!response.id) {
+    throw new Error("Trello members/me response did not include an id.");
+  }
+
+  return response.id;
+}
+
+export async function isCardAssignedToMember(params: {
+  apiKey: string;
+  token: string;
+  cardId: string;
+  memberId: string;
+}) {
+  const response = await makeTrelloApiRequest({
+    apiKey: params.apiKey,
+    token: params.token,
+    method: "GET",
+    endpoint: `/cards/${params.cardId}?fields=idMembers`,
+    clientIdentifier: "TrelloMcpTool",
+  }) as TrelloCardMembersResponse;
+
+  return response.idMembers?.includes(params.memberId) ?? false;
+}
+
 export async function makeTrelloApiRequest(request: TrelloApiRequest) {
   const { token, apiKey } = request;
   const clientIdentifier = request.clientIdentifier ?? TRELLO_CLIENT_IDENTIFIER;
+  const endpoint = normalizeTrelloEndpoint(request.endpoint);
 
-  const url = new URL(`https://api.trello.com/1/${request.endpoint}`);
+  const url = new URL(`/1${endpoint}`, "https://api.trello.com");
   url.searchParams.set("key", apiKey);
   url.searchParams.set("token", token);
 
@@ -90,7 +241,7 @@ export async function makeTrelloApiRequest(request: TrelloApiRequest) {
     method: request.method,
     headers: {
       "Content-Type": "application/json",
-      "X-Trello-Client-Identifier": clientIdentifier
+      "X-Trello-Client-Identifier": clientIdentifier,
     },
   };
 

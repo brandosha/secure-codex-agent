@@ -66,17 +66,21 @@ export function agentTools(tools: Tool[]) {
   const mcpServer = newServer();
 
   for (const tool of tools) {
-    if (tool instanceof McpTool) {
-      tool.start(mcpServer, agent);
-      console.log(`Registered MCP tool: ${tool.name} `);
-      mcpServersConfig[tool.name] = {
-        url: `http://tools:8000${tool.route}`,
-        http_headers: {
-          "Authorization": `Bearer ${mcpAuthToken}`,
-        },
-      };
-    } else {
-      tool.start(publicServer, agent);
+    try {
+      if (tool instanceof McpTool) {
+        tool.start(mcpServer, agent);
+        console.log(`Registered MCP tool: ${tool.name} `);
+        mcpServersConfig[tool.name] = {
+          url: `http://tools:8000${tool.route}`,
+          http_headers: {
+            "Authorization": `Bearer ${mcpAuthToken}`,
+          },
+        };
+      } else {
+        tool.start(publicServer, agent);
+      }
+    } catch (error) {
+      console.error(`Error starting tool ${tool.constructor.name}: ${error instanceof Error ? error.message : String(error)}`);
     }
   }
 
