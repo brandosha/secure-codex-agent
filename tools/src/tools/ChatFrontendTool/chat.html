@@ -254,12 +254,29 @@
       border-color: rgba(252, 165, 165, 0.24);
     }
 
+    .event.command {
+      background: linear-gradient(180deg, rgba(30, 41, 59, 0.9), rgba(15, 23, 42, 0.82));
+      border-color: rgba(148, 163, 184, 0.22);
+    }
+
+    .event.mcp-tool {
+      background: linear-gradient(180deg, rgba(8, 47, 73, 0.9), rgba(15, 23, 42, 0.84));
+      border-color: rgba(56, 189, 248, 0.2);
+    }
+
     .event-head {
       display: flex;
       align-items: center;
       justify-content: space-between;
       gap: 10px;
       padding: 14px 16px 8px;
+    }
+
+    .event-head-actions {
+      display: inline-flex;
+      align-items: center;
+      gap: 10px;
+      flex-shrink: 0;
     }
 
     .event-head strong {
@@ -286,6 +303,43 @@
       font-size: 11px;
     }
 
+    .event-status {
+      display: inline-flex;
+      align-items: center;
+      padding: 4px 8px;
+      border-radius: 999px;
+      font-size: 11px;
+      font-weight: 700;
+      text-transform: capitalize;
+      border: 1px solid transparent;
+    }
+
+    .event-status.in_progress {
+      color: #fcd34d;
+      background: rgba(217, 119, 6, 0.16);
+      border-color: rgba(217, 119, 6, 0.28);
+    }
+
+    .event-status.completed {
+      color: #86efac;
+      background: rgba(22, 163, 74, 0.16);
+      border-color: rgba(22, 163, 74, 0.28);
+    }
+
+    .event-status.failed,
+    .event-status.error {
+      color: #fca5a5;
+      background: rgba(220, 38, 38, 0.16);
+      border-color: rgba(220, 38, 38, 0.28);
+    }
+
+    .event-status.pending,
+    .event-status.queued {
+      color: #c4b5fd;
+      background: rgba(124, 58, 237, 0.16);
+      border-color: rgba(124, 58, 237, 0.28);
+    }
+
     .event-body {
       padding: 0 16px 16px;
     }
@@ -308,6 +362,60 @@
       color: #cbd5e1;
       font: 12px/1.6 var(--mono);
       background: rgba(2, 6, 23, 0.42);
+    }
+
+    .json-block[hidden] {
+      display: none;
+    }
+
+    .output-block {
+      margin: 0;
+      padding: 14px 16px 16px;
+      overflow-x: auto;
+      white-space: pre-wrap;
+      word-break: break-word;
+      border-top: 1px solid rgba(148, 163, 184, 0.12);
+      color: #dbeafe;
+      font: 12px/1.6 var(--mono);
+      background: rgba(2, 6, 23, 0.5);
+    }
+
+    .output-block[hidden] {
+      display: none;
+    }
+
+    .command-text {
+      margin: 0;
+      color: #dbeafe;
+      font: 13px/1.6 var(--mono);
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+
+    .detail-block {
+      margin: 0;
+      padding: 14px 16px 16px;
+      overflow-x: auto;
+      white-space: pre-wrap;
+      word-break: break-word;
+      border-top: 1px solid rgba(148, 163, 184, 0.12);
+      color: #dbeafe;
+      font: 12px/1.6 var(--mono);
+      background: rgba(2, 6, 23, 0.46);
+    }
+
+    .detail-block[hidden] {
+      display: none;
+    }
+
+    .event-toggle {
+      padding: 6px 10px;
+      border-radius: 999px;
+      border: 1px solid rgba(148, 163, 184, 0.18);
+      background: rgba(15, 23, 42, 0.9);
+      color: var(--text);
+      font-size: 12px;
+      line-height: 1;
     }
 
     .composer {
@@ -627,6 +735,35 @@
       return null;
     }
 
+    function extractCommandEvent(event) {
+      const item = event.item;
+      if (!item || typeof item !== "object" || item.type !== "command_execution") {
+        return null;
+      }
+
+      return {
+        command: typeof item.command === "string" ? item.command : "",
+        output: typeof item.aggregated_output === "string" ? item.aggregated_output : "",
+        status: typeof item.status === "string" ? item.status : "unknown",
+        exitCode: item.exit_code,
+      };
+    }
+
+    function extractMcpToolCallEvent(event) {
+      const item = event.item;
+      if (!item || typeof item !== "object" || item.type !== "mcp_tool_call") {
+        return null;
+      }
+
+      return {
+        server: typeof item.server === "string" ? item.server : "unknown",
+        tool: typeof item.tool === "string" ? item.tool : "unknown",
+        status: typeof item.status === "string" ? item.status : "unknown",
+        arguments: item.arguments ?? null,
+        result: item.result ?? null,
+      };
+    }
+
     function createMessageEvent(event, info) {
       const article = document.createElement("article");
       article.className = `event message ${info.role}`;
@@ -663,6 +800,174 @@
       return article;
     }
 
+    function createCommandEvent(event, info) {
+      const article = document.createElement("article");
+      article.className = "event command";
+
+      const head = document.createElement("div");
+      head.className = "event-head";
+
+      const strong = document.createElement("strong");
+      strong.textContent = "Command";
+
+      const actions = document.createElement("div");
+      actions.className = "event-head-actions";
+
+      const meta = document.createElement("div");
+      meta.className = "event-meta";
+
+      const type = document.createElement("span");
+      type.className = "event-type";
+      type.textContent = getType(event);
+
+      const status = document.createElement("span");
+      status.className = `event-status ${info.status}`;
+      status.textContent = info.status.replace(/_/g, " ");
+
+      const time = document.createElement("span");
+      time.textContent = formatTime(Date.now());
+
+      meta.append(type, time);
+      actions.append(status, meta);
+
+      let output;
+      if (info.output.trim()) {
+        const toggle = document.createElement("button");
+        toggle.type = "button";
+        toggle.className = "event-toggle";
+        toggle.textContent = "Show Output";
+        toggle.setAttribute("aria-expanded", "false");
+        actions.append(toggle);
+
+        output = document.createElement("pre");
+        output.className = "output-block";
+        output.textContent = info.output;
+        output.hidden = true;
+
+        toggle.addEventListener("click", () => {
+          const expanded = toggle.getAttribute("aria-expanded") === "true";
+          const nextExpanded = !expanded;
+          toggle.setAttribute("aria-expanded", nextExpanded ? "true" : "false");
+          toggle.textContent = nextExpanded ? "Hide Output" : "Show Output";
+          output.hidden = !nextExpanded;
+        });
+      }
+
+      head.append(strong, actions);
+
+      const body = document.createElement("div");
+      body.className = "event-body";
+
+      const text = document.createElement("p");
+      text.className = "command-text";
+      text.textContent = info.command;
+      body.append(text);
+
+      article.append(head, body);
+      if (output) {
+        article.append(output);
+      }
+
+      return article;
+    }
+
+    function createMcpToolCallEvent(event, info) {
+      const article = document.createElement("article");
+      article.className = "event mcp-tool";
+
+      const head = document.createElement("div");
+      head.className = "event-head";
+
+      const strong = document.createElement("strong");
+      strong.textContent = "MCP Tool Call";
+
+      const actions = document.createElement("div");
+      actions.className = "event-head-actions";
+
+      const meta = document.createElement("div");
+      meta.className = "event-meta";
+
+      const type = document.createElement("span");
+      type.className = "event-type";
+      type.textContent = getType(event);
+
+      const status = document.createElement("span");
+      status.className = `event-status ${info.status}`;
+      status.textContent = info.status.replace(/_/g, " ");
+
+      const time = document.createElement("span");
+      time.textContent = formatTime(Date.now());
+
+      meta.append(type, time);
+      actions.append(status, meta);
+
+      let argumentsBlock;
+      if (info.arguments !== null) {
+        const toggle = document.createElement("button");
+        toggle.type = "button";
+        toggle.className = "event-toggle";
+        toggle.textContent = "Show Arguments";
+        toggle.setAttribute("aria-expanded", "false");
+        actions.append(toggle);
+
+        argumentsBlock = document.createElement("pre");
+        argumentsBlock.className = "detail-block";
+        argumentsBlock.textContent = prettyJson(info.arguments);
+        argumentsBlock.hidden = true;
+
+        toggle.addEventListener("click", () => {
+          const expanded = toggle.getAttribute("aria-expanded") === "true";
+          const nextExpanded = !expanded;
+          toggle.setAttribute("aria-expanded", nextExpanded ? "true" : "false");
+          toggle.textContent = nextExpanded ? "Hide Arguments" : "Show Arguments";
+          argumentsBlock.hidden = !nextExpanded;
+        });
+      }
+
+      let resultBlock;
+      if (info.result !== null) {
+        const toggle = document.createElement("button");
+        toggle.type = "button";
+        toggle.className = "event-toggle";
+        toggle.textContent = "Show Result";
+        toggle.setAttribute("aria-expanded", "false");
+        actions.append(toggle);
+
+        resultBlock = document.createElement("pre");
+        resultBlock.className = "detail-block";
+        resultBlock.textContent = prettyJson(info.result);
+        resultBlock.hidden = true;
+
+        toggle.addEventListener("click", () => {
+          const expanded = toggle.getAttribute("aria-expanded") === "true";
+          const nextExpanded = !expanded;
+          toggle.setAttribute("aria-expanded", nextExpanded ? "true" : "false");
+          toggle.textContent = nextExpanded ? "Hide Result" : "Show Result";
+          resultBlock.hidden = !nextExpanded;
+        });
+      }
+
+      head.append(strong, actions);
+
+      const body = document.createElement("div");
+      body.className = "event-body";
+
+      const text = document.createElement("p");
+      text.className = "command-text";
+      text.textContent = `${info.server}::${info.tool}`;
+      body.append(text);
+
+      article.append(head, body);
+      if (argumentsBlock) {
+        article.append(argumentsBlock);
+      }
+      if (resultBlock) {
+        article.append(resultBlock);
+      }
+
+      return article;
+    }
+
     function createJsonEvent(event) {
       const article = document.createElement("article");
       article.className = "event";
@@ -683,12 +988,31 @@
       const time = document.createElement("span");
       time.textContent = formatTime(Date.now());
 
+      const actions = document.createElement("div");
+      actions.className = "event-head-actions";
+
+      const toggle = document.createElement("button");
+      toggle.type = "button";
+      toggle.className = "event-toggle";
+      toggle.textContent = "Show JSON";
+      toggle.setAttribute("aria-expanded", "false");
+
+      actions.append(meta, toggle);
       meta.append(type, time);
-      head.append(strong, meta);
+      head.append(strong, actions);
 
       const pre = document.createElement("pre");
       pre.className = "json-block";
       pre.textContent = prettyJson(event);
+      pre.hidden = true;
+
+      toggle.addEventListener("click", () => {
+        const expanded = toggle.getAttribute("aria-expanded") === "true";
+        const nextExpanded = !expanded;
+        toggle.setAttribute("aria-expanded", nextExpanded ? "true" : "false");
+        toggle.textContent = nextExpanded ? "Hide JSON" : "Show JSON";
+        pre.hidden = !nextExpanded;
+      });
 
       article.append(head, pre);
       return article;
@@ -697,8 +1021,16 @@
     function appendEvent(event, options = {}) {
       const shouldScroll = options.scroll !== false;
       removeEmptyState();
+      const commandInfo = extractCommandEvent(event);
+      const mcpToolCallInfo = extractMcpToolCallEvent(event);
       const info = extractMessageEvent(event);
-      const node = info ? createMessageEvent(event, info) : createJsonEvent(event);
+      const node = mcpToolCallInfo
+        ? createMcpToolCallEvent(event, mcpToolCallInfo)
+        : commandInfo
+        ? createCommandEvent(event, commandInfo)
+        : info
+          ? createMessageEvent(event, info)
+          : createJsonEvent(event);
       elements.timeline.appendChild(node);
       eventCount += 1;
       updateEventCount();
