@@ -5,11 +5,11 @@ import { McpTool } from "./base";
 
 export class TrelloMcpTool extends McpTool {
   constructor() {
-    super("trello", trelloMcpServer());
+    super("trello", trelloMcpServerBuilder);
   }
 }
 
-function trelloMcpServer() {
+function trelloMcpServerBuilder() {
   const { TRELLO_API_KEY, TRELLO_TOKEN } = process.env;
 
   if (!TRELLO_API_KEY || !TRELLO_TOKEN) {

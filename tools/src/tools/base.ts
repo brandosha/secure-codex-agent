@@ -14,48 +14,46 @@ export abstract class Tool {
   }
 }
 
-class EndpointTool extends Tool {
-  constructor(
-    public route: string,
-    handler: (c: Context) => Promise<Response>
-  ) {
-    if (!route.startsWith("/")) {
-      throw new Error("Route must start with '/'");
-    }
+export class WebhookTool extends Tool {
+  readonly route: string;
 
+  constructor(name: string, handler: (c: Context) => Promise<Response>) {
+    const route = `/webhook/${name}`;
     super((server, agent) => {
       server.all(route, handler);
     });
-  }
-}
-
-export class WebhookTool extends EndpointTool {
-  constructor(name: string, handler: (c: Context) => Promise<Response>) {
-    const route = `/webhook/${name}`;
-    super(route, handler);
+    this.route = route;
   }
 }
 
 
 const mcpAuthToken = crypto.randomUUID();
 
-export class McpTool extends EndpointTool {
+export type McpServerBuilder = () => McpServer;
+
+export class McpTool extends Tool {
   name: string;
+  route: string;
 
-  constructor(name: string, mcp: McpServer) {
-    const transport = new WebStandardStreamableHTTPServerTransport();
-    const connected = mcp.connect(transport);
+  constructor(name: string, mcpBuilder: McpServerBuilder) {
+    const route = `/mcp/${name}`;
+    super((server, agent) => {
+      const mcp = mcpBuilder();
+      const transport = new WebStandardStreamableHTTPServerTransport();
+      const connected = mcp.connect(transport);
 
-    super(`/mcp/${name}`, async (c) => {
-      await connected;
-      if (c.req.header("Authorization") !== `Bearer ${mcpAuthToken}`) {
-        return c.text("Unauthorized", 401);
-      }
+      server.all(route, async (c) => {
+        await connected;
+        if (c.req.header("Authorization") !== `Bearer ${mcpAuthToken}`) {
+          return c.text("Unauthorized", 401);
+        }
 
-      return transport.handleRequest(c.req.raw);
+        return transport.handleRequest(c.req.raw);
+      });
     });
 
     this.name = name;
+    this.route = route;
   }
 }
 

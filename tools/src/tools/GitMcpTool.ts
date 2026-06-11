@@ -22,45 +22,47 @@ const defaultGitMcpToolOptions: GitMcpToolOptions = {
 
 export class GitMcpTool extends McpTool {
   constructor(options: GitMcpToolOptions = defaultGitMcpToolOptions) {
-    const mcp = new McpServer({
-      name: "Git SSH Proxy",
-      version: "0.0.1",
-    });
+    super("git", () => {
+      const mcp = new McpServer({
+        name: "Git SSH Proxy",
+        version: "0.0.1",
+      });
 
-    mcp.registerTool("git_ssh_proxy", {
-      inputSchema: z.object({
-        cwd: z.string(),
-        action: z.enum(["ls-remote", "fetch", "push"]),
-        remote: z.string(),
-        branch: z.string().optional(),
-      }),
-    }, async (input) => {
-      const { cwd, action, remote, branch } = input;
+      mcp.registerTool("git_ssh_proxy", {
+        inputSchema: z.object({
+          cwd: z.string(),
+          action: z.enum(["ls-remote", "fetch", "push"]),
+          remote: z.string(),
+          branch: z.string().optional(),
+        }),
+      }, async (input) => {
+        const { cwd, action, remote, branch } = input;
 
-      const repoPath = path.resolve(WORKSPACE_PATH, cwd);
-      if (!repoPath.startsWith(WORKSPACE_PATH)) {
-        return mcpTextResult("Invalid repository path", true);
-      }
-
-      try {
-        if (action === "push") {
-          assertPushAllowed(options, branch);
+        const repoPath = path.resolve(WORKSPACE_PATH, cwd);
+        if (!repoPath.startsWith(WORKSPACE_PATH)) {
+          return mcpTextResult("Invalid repository path", true);
         }
 
-        const result = await runGitRemoteCommand({
-          action,
-          remote,
-          branch,
-          cwd: repoPath
-        });
+        try {
+          if (action === "push") {
+            assertPushAllowed(options, branch);
+          }
 
-        return mcpTextResult(`${result.stdout}${result.stderr ? "\n\nstderr:\n" + result.stderr : ""}`);
-      } catch (err) {
-        return mcpTextResult(`Git command failed: ${err instanceof Error ? err.message : String(err)}`, true);
-      }
+          const result = await runGitRemoteCommand({
+            action,
+            remote,
+            branch,
+            cwd: repoPath
+          });
+
+          return mcpTextResult(`${result.stdout}${result.stderr ? "\n\nstderr:\n" + result.stderr : ""}`);
+        } catch (err) {
+          return mcpTextResult(`Git command failed: ${err instanceof Error ? err.message : String(err)}`, true);
+        }
+      });
+
+      return mcp;
     });
-
-    super("git", mcp);
   }
 }
 
