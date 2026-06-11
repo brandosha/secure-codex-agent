@@ -169,7 +169,7 @@
     }
 
     .chat-panel {
-      min-height: calc(100vh - 48px);
+      height: calc(100vh - 48px);
       display: grid;
       grid-template-rows: auto minmax(0, 1fr) auto;
       overflow: hidden;
@@ -202,11 +202,13 @@
     }
 
     .timeline {
+      min-height: 0;
       padding: 22px;
-      overflow-y: auto;
-      display: grid;
+      overflow: auto;
+      display: flex;
+      flex-direction: column;
       gap: 14px;
-      align-content: start;
+      overscroll-behavior: contain;
     }
 
     .empty-state {
@@ -222,6 +224,9 @@
     }
 
     .event {
+      display: block;
+      flex: 0 0 auto;
+      min-height: 64px;
       border-radius: 20px;
       border: 1px solid var(--border);
       background: rgba(15, 23, 42, 0.62);
@@ -269,7 +274,8 @@
       align-items: center;
       justify-content: space-between;
       gap: 10px;
-      padding: 14px 16px 8px;
+      min-height: 62px;
+      padding: 14px 16px;
     }
 
     .event-head-actions {
@@ -280,7 +286,10 @@
     }
 
     .event-head strong {
+      display: inline-flex;
+      align-items: center;
       font-size: 14px;
+      line-height: 1.4;
     }
 
     .event-meta {
@@ -290,6 +299,7 @@
       min-width: 0;
       color: var(--muted);
       font-size: 12px;
+      line-height: 1.4;
     }
 
     .event-type {
@@ -487,7 +497,7 @@
       }
 
       .chat-panel {
-        min-height: calc(100vh - 20px);
+        height: calc(100vh - 20px);
       }
     }
 
@@ -586,6 +596,7 @@
 
     const elements = {};
     let eventCount = 0;
+    const AUTO_SCROLL_THRESHOLD = 48;
 
     function setStatus(state, label) {
       elements.statusPill.dataset.state = state;
@@ -603,8 +614,16 @@
       }
     }
 
+    function isNearBottom() {
+      const distanceFromBottom =
+        elements.timeline.scrollHeight - elements.timeline.scrollTop - elements.timeline.clientHeight;
+      return distanceFromBottom <= AUTO_SCROLL_THRESHOLD;
+    }
+
     function scrollTimeline() {
-      elements.timeline.scrollTop = elements.timeline.scrollHeight;
+      requestAnimationFrame(() => {
+        elements.timeline.scrollTop = elements.timeline.scrollHeight;
+      });
     }
 
     function formatTime(value) {
@@ -1020,6 +1039,7 @@
 
     function appendEvent(event, options = {}) {
       const shouldScroll = options.scroll !== false;
+      const shouldStickToBottom = shouldScroll && isNearBottom();
       removeEmptyState();
       const commandInfo = extractCommandEvent(event);
       const mcpToolCallInfo = extractMcpToolCallEvent(event);
@@ -1034,7 +1054,7 @@
       elements.timeline.appendChild(node);
       eventCount += 1;
       updateEventCount();
-      if (shouldScroll) {
+      if (shouldStickToBottom) {
         scrollTimeline();
       }
     }
