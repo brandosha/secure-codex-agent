@@ -1,8 +1,8 @@
 #!/bin/bash
 set -e
 
-# Use the passed HOST_UID env variable, or default to 1000
-TARGET_UID=${HOST_UID:-1000}
+# Use the passed HOST_UID env variable, or default to 10000
+TARGET_UID=${HOST_UID:-10000}
 SSH_DIR=/home/agent/.ssh
 SSH_KEY_PATH=${SSH_KEY_PATH:-$SSH_DIR/id_ed25519}
 SSH_PUBLIC_KEY_PATH="${SSH_KEY_PATH}.pub"
