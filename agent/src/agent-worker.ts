@@ -30,7 +30,6 @@ class CodexPromptTask {
   }
 
   async *run() {
-    console.log("Starting prompt task with prompt:", this.prompt);
     const abortController = new AbortController();
     const { events } = await this.thread.runStreamed(this.prompt, {
       signal: abortController.signal,
@@ -41,7 +40,6 @@ class CodexPromptTask {
       if (event.type.includes("item")) {
         this._unlockAbortController(abortController);
       }
-      console.log(event);
       yield event;
     }
 
@@ -62,9 +60,7 @@ class CodexAgent extends PubSub<ThreadEvent> {
     super();
     try {
       this._threadId = readFileSync(CODEX_THREAD_ID_PATH, "utf-8");
-      console.log("Resuming thread with ID:", this._threadId);
     } catch (err) {
-      console.log("No existing thread ID found, starting a new thread.");
     }
   }
 
@@ -141,7 +137,6 @@ process.on("message", async (message) => {
   }
 
   const data = parsedMessage.data;
-  console.log("Received message:", data);
   if (data.type === "abort") {
     agent.abort();
   } else if (data.type === "prompt") {

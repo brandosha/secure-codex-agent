@@ -35,7 +35,9 @@ export CI=true
 export SSH_KEY_PATH
 
 echo "Git MCP public key:"
+echo "=================="
 cat "$SSH_PUBLIC_KEY_PATH"
+echo "=================="
 
 # Run the requested container command as 'agent'
 cd /home/agent/app

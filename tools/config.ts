@@ -5,7 +5,7 @@ agentTools([
   new GitMcpTool({
     allowForcePush: false,
     branches: {
-      block: ["main", "master", "prod", "production"],
+      block: ["main", "master", "prod", "production", "dev"],
     },
   }),
   new ChatFrontendTool(),

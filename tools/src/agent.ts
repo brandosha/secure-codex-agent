@@ -39,7 +39,6 @@ export class Agent extends PubSub<AgentEvent> {
     this._ws.on("message", (data) => {
       try {
         const message = JSON.parse(data.toString()) as AgentEvent;
-        console.log("Received message:", message);
         this.#recordAndPublish(message);
       } catch (err) {
         console.error("Error parsing message:", err, data);

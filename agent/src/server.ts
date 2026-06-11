@@ -73,11 +73,8 @@ app.get("/", upgradeWebSocket(async (c) => {
         if (data.type === "abort") {
           agent.abort();
         } else if (data.type === "prompt") {
-          console.log("Sending prompt:", data.message);
-          console.log("With options:", JSON.stringify(promptOptions, null, 2));
           agent.prompt(data.message, promptOptions);
         } else if (data.type === "config") {
-          console.log("Updating agent config:", JSON.stringify(data.config, null, 2));
           promptOptions = data.config;
         }
       } catch (err) {

@@ -82,18 +82,15 @@ export class ChatFrontendTool extends Tool {
 
         return {
           onOpen: async (event, ws) => {
-            console.log("WebSocket connection opened");
             unsubscribe = agent.subscribe((event) => {
               ws.send(JSON.stringify(event));
             });
           },
           onMessage: async (event, ws) => {
             const message = event.data.toString();
-            console.log("Received message:", message);
             handleWsMessage(message, username, agent);
           },
           onClose: async (event, ws) => {
-            console.log("WebSocket connection closed");
             unsubscribe();
           },
           onError: async (event, ws) => {
@@ -101,8 +98,6 @@ export class ChatFrontendTool extends Tool {
           }
         }
       }));
-
-      console.log("ChatFrontendTool registered");
     });
   }
 }
