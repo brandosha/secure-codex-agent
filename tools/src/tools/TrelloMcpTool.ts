@@ -77,6 +77,48 @@ function trelloMcpServer() {
     }
   });
 
+  mcp.registerTool("trello_create_card", {
+    description: "Create a Trello card assigned to the current Trello user.",
+    inputSchema: z.object({
+      body: z.record(z.string(), z.any()),
+    }),
+  }, async (input) => {
+    try {
+      const currentMemberId = await currentMemberIdPromise;
+      const response = await makeTrelloApiRequest({
+        method: "POST",
+        endpoint: "/cards",
+        body: buildCreateCardBody(input.body, currentMemberId),
+        apiKey: TRELLO_API_KEY,
+        token: TRELLO_TOKEN,
+        clientIdentifier: "TrelloMcpTool",
+      });
+
+      return {
+        isError: false,
+        content: [{
+          type: "resource",
+          resource: {
+            uri: "trello-api-response.json",
+            mimeType: "application/json",
+            text: JSON.stringify(response),
+          },
+        }],
+      };
+    } catch (err) {
+      return {
+        isError: true,
+        content: [{
+          type: "text",
+          text: "Failed to create Trello card",
+        }, {
+          type: "text",
+          text: `Error: ${err instanceof Error ? err.message : String(err)}`,
+        }],
+      };
+    }
+  });
+
   return mcp;
 }
 
@@ -127,6 +169,10 @@ export function classifyTrelloRequest(method: TrelloMethod, endpoint: string): T
   }
 
   const { segments } = parseTrelloEndpoint(endpoint);
+  if (method === "POST" && segments.length === 1 && segments[0] === "cards") {
+    throw new TrelloAuthorizationError("Card creation via trello_api is blocked. Use trello_create_card instead.");
+  }
+
   if (segments.length < 2 || segments[0] !== "cards" || !segments[1]) {
     throw new TrelloAuthorizationError("Mutating Trello requests are only allowed for card endpoints.");
   }
@@ -226,6 +272,35 @@ export async function isCardAssignedToMember(params: {
   }) as TrelloCardMembersResponse;
 
   return response.idMembers?.includes(params.memberId) ?? false;
+}
+
+export function buildCreateCardBody(body: Record<string, any>, currentMemberId: string) {
+  return {
+    ...body,
+    idMembers: mergeMemberIds(body.idMembers, currentMemberId),
+  };
+}
+
+export function mergeMemberIds(idMembers: unknown, currentMemberId: string) {
+  const normalizedMembers = normalizeMemberIds(idMembers);
+  if (normalizedMembers.includes(currentMemberId)) {
+    return normalizedMembers;
+  }
+
+  return [...normalizedMembers, currentMemberId];
+}
+
+function normalizeMemberIds(idMembers: unknown) {
+  if (typeof idMembers === "string") {
+    return idMembers ? [idMembers] : [];
+  }
+
+  if (Array.isArray(idMembers)) {
+    return idMembers
+      .filter((memberId): memberId is string => typeof memberId === "string" && memberId.length > 0);
+  }
+
+  return [];
 }
 
 export async function makeTrelloApiRequest(request: TrelloApiRequest) {
