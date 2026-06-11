@@ -3,7 +3,7 @@ import { z } from "zod";
 
 import { McpTool } from "./base";
 
-export class NewrelicMcpTool extends McpTool {
+export class NewRelicMcpTool extends McpTool {
   constructor() {
     super("newrelic", newrelicMcpServerBuilder);
   }
