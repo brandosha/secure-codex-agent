@@ -205,10 +205,17 @@
       min-height: 0;
       padding: 22px;
       overflow: auto;
-      display: flex;
-      flex-direction: column;
-      gap: 14px;
+      display: block;
       overscroll-behavior: contain;
+    }
+
+    .timeline > .event,
+    .timeline > .empty-state {
+      margin-top: 14px;
+    }
+
+    .timeline > :first-child {
+      margin-top: 0;
     }
 
     .empty-state {
@@ -224,8 +231,6 @@
     }
 
     .event {
-      display: block;
-      flex: 0 0 auto;
       min-height: 64px;
       border-radius: 20px;
       border: 1px solid var(--border);
@@ -597,6 +602,13 @@
     const elements = {};
     let eventCount = 0;
     const AUTO_SCROLL_THRESHOLD = 48;
+    const HISTORY_PAGE_SIZE = 50;
+    const LOAD_MORE_THRESHOLD = 120;
+    const historyState = {
+      offset: 0,
+      hasMore: true,
+      isLoadingOlder: false,
+    };
 
     function setStatus(state, label) {
       elements.statusPill.dataset.state = state;
@@ -624,6 +636,12 @@
       requestAnimationFrame(() => {
         elements.timeline.scrollTop = elements.timeline.scrollHeight;
       });
+    }
+
+    function resetHistoryState() {
+      historyState.offset = 0;
+      historyState.hasMore = true;
+      historyState.isLoadingOlder = false;
     }
 
     function formatTime(value) {
@@ -1037,20 +1055,24 @@
       return article;
     }
 
+    function createEventNode(event) {
+      const commandInfo = extractCommandEvent(event);
+      const mcpToolCallInfo = extractMcpToolCallEvent(event);
+      const info = extractMessageEvent(event);
+      return mcpToolCallInfo
+        ? createMcpToolCallEvent(event, mcpToolCallInfo)
+        : commandInfo
+          ? createCommandEvent(event, commandInfo)
+          : info
+            ? createMessageEvent(event, info)
+            : createJsonEvent(event);
+    }
+
     function appendEvent(event, options = {}) {
       const shouldScroll = options.scroll !== false;
       const shouldStickToBottom = shouldScroll && isNearBottom();
       removeEmptyState();
-      const commandInfo = extractCommandEvent(event);
-      const mcpToolCallInfo = extractMcpToolCallEvent(event);
-      const info = extractMessageEvent(event);
-      const node = mcpToolCallInfo
-        ? createMcpToolCallEvent(event, mcpToolCallInfo)
-        : commandInfo
-        ? createCommandEvent(event, commandInfo)
-        : info
-          ? createMessageEvent(event, info)
-          : createJsonEvent(event);
+      const node = createEventNode(event);
       elements.timeline.appendChild(node);
       eventCount += 1;
       updateEventCount();
@@ -1059,10 +1081,27 @@
       }
     }
 
-    async function hydrateHistory() {
+    function prependEvents(events) {
+      removeEmptyState();
+      const previousScrollHeight = elements.timeline.scrollHeight;
+      const fragment = document.createDocumentFragment();
+
+      for (const event of events) {
+        fragment.appendChild(createEventNode(event));
+      }
+
+      elements.timeline.prepend(fragment);
+      eventCount += events.length;
+      updateEventCount();
+
+      const nextScrollHeight = elements.timeline.scrollHeight;
+      elements.timeline.scrollTop += nextScrollHeight - previousScrollHeight;
+    }
+
+    async function fetchHistoryPage(offset, limit) {
       const params = new URLSearchParams({
-        limit: "50",
-        offset: "0",
+        limit: String(limit),
+        offset: String(offset),
       });
       const response = await fetch(`/chat/events?${params.toString()}`);
       if (!response.ok) {
@@ -1070,19 +1109,29 @@
       }
 
       const payload = await response.json();
-      const events = Array.isArray(payload.events) ? payload.events : [];
+      return Array.isArray(payload.events) ? payload.events : [];
+    }
+
+    function showEmptyState() {
+      elements.emptyState = document.createElement("div");
+      elements.emptyState.className = "empty-state";
+      elements.emptyState.id = "empty-state";
+      elements.emptyState.textContent = "Events will appear here once the websocket connects and the agent starts responding.";
+      elements.timeline.appendChild(elements.emptyState);
+      updateEventCount();
+    }
+
+    async function hydrateHistory() {
+      const events = await fetchHistoryPage(0, HISTORY_PAGE_SIZE);
 
       elements.timeline.replaceChildren();
       elements.emptyState = null;
       eventCount = 0;
+      resetHistoryState();
 
       if (events.length === 0) {
-        elements.emptyState = document.createElement("div");
-        elements.emptyState.className = "empty-state";
-        elements.emptyState.id = "empty-state";
-        elements.emptyState.textContent = "Events will appear here once the websocket connects and the agent starts responding.";
-        elements.timeline.appendChild(elements.emptyState);
-        updateEventCount();
+        historyState.hasMore = false;
+        showEmptyState();
         return;
       }
 
@@ -1090,7 +1139,42 @@
         appendEvent(persistedEvent.rawJson, { scroll: false });
       }
 
+      historyState.offset = events.length;
+      historyState.hasMore = events.length === HISTORY_PAGE_SIZE;
       scrollTimeline();
+    }
+
+    async function loadOlderEvents() {
+      if (historyState.isLoadingOlder || !historyState.hasMore) {
+        return;
+      }
+
+      historyState.isLoadingOlder = true;
+      try {
+        const events = await fetchHistoryPage(historyState.offset, HISTORY_PAGE_SIZE);
+        if (events.length === 0) {
+          historyState.hasMore = false;
+          return;
+        }
+
+        const olderEvents = events.map((persistedEvent) => persistedEvent.rawJson);
+        prependEvents(olderEvents);
+        historyState.offset += events.length;
+        historyState.hasMore = events.length === HISTORY_PAGE_SIZE;
+      } catch (error) {
+        appendEvent({
+          type: "frontend.history_error",
+          message: error instanceof Error ? error.message : String(error),
+        }, { scroll: false });
+      } finally {
+        historyState.isLoadingOlder = false;
+      }
+    }
+
+    function maybeLoadOlderEvents() {
+      if (elements.timeline.scrollTop <= LOAD_MORE_THRESHOLD) {
+        loadOlderEvents();
+      }
     }
 
     async function connect() {
@@ -1165,13 +1249,9 @@
 
       elements.clearButton.addEventListener("click", () => {
         elements.timeline.replaceChildren();
-        elements.emptyState = document.createElement("div");
-        elements.emptyState.className = "empty-state";
-        elements.emptyState.id = "empty-state";
-        elements.emptyState.textContent = "Events will appear here once the websocket connects and the agent starts responding.";
-        elements.timeline.appendChild(elements.emptyState);
         eventCount = 0;
-        updateEventCount();
+        resetHistoryState();
+        showEmptyState();
       });
 
       elements.composerForm.addEventListener("submit", (event) => {
@@ -1192,6 +1272,10 @@
           event.preventDefault();
           elements.composerForm.requestSubmit();
         }
+      });
+
+      elements.timeline.addEventListener("scroll", () => {
+        maybeLoadOlderEvents();
       });
 
       updateEventCount();
