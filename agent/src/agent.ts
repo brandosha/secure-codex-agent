@@ -1,4 +1,5 @@
 import { fork } from "child_process";
+import { mkdirSync, readFileSync, writeFileSync } from "fs";
 import path from "path";
 
 import { CodexOptions, ThreadEvent, ThreadOptions } from "@openai/codex-sdk";
@@ -30,14 +31,23 @@ export const agentRequestMessageSchema = z.discriminatedUnion("type", [
 
 export type AgentRequestMessage = z.infer<typeof agentRequestMessageSchema>;
 
+export interface AgentOptions {
+  threadId?: string;
+  promptOptions?: PromptOptions;
+}
 
 const __dirname = import.meta.dirname;
 
 export class Agent extends PubSub<ThreadEvent> {
+  threadId?: string;
+  promptOptions: PromptOptions;
   private _agentProcess;
 
-  constructor() {
+  constructor(options: AgentOptions = {}) {
     super();
+    
+    this.threadId = options.threadId;
+    this.promptOptions = options.promptOptions || {};
 
     const { HOST_UID } = process.env;
     if (!HOST_UID) {
@@ -53,16 +63,21 @@ export class Agent extends PubSub<ThreadEvent> {
       env: {
         ...process.env,
         HOME: "/home/agent",
+        CODEX_THREAD_ID: this.threadId || "",
       }
     });
 
     this._agentProcess.on("message", (message: ThreadEvent) => {
+      if (message.type === "thread.started") {
+        this.threadId = message.thread_id;
+      }
+
       this.publish(message);
     });
   }
 
   prompt(message: string, options?: PromptOptions) {
-    this._send({ type: "prompt", message, options });
+    this._send({ type: "prompt", message, options: options ?? this.promptOptions });
   }
 
   abort() {
@@ -72,4 +87,35 @@ export class Agent extends PubSub<ThreadEvent> {
   private _send(req: AgentRequestMessage) {
     this._agentProcess.send(req);
   }
+}
+
+let mainAgent: Agent | undefined;
+export function getMainAgent() {
+  if (mainAgent) {
+    return mainAgent;
+  }
+
+  const CODEX_MAIN_AGENT_THREAD_ID_PATH = "/home/agent/codex_thread_id.txt";
+
+  let agent: Agent;
+
+  try {
+    const threadId = readFileSync(CODEX_MAIN_AGENT_THREAD_ID_PATH, "utf-8").trim();
+    agent = new Agent({
+      threadId
+    });
+  } catch (error) {
+    console.error("Starting new main agent thread");
+    agent = new Agent();
+  }
+
+  agent.subscribe((event) => {
+    if (event.type === "thread.started") {
+      mkdirSync(path.dirname(CODEX_MAIN_AGENT_THREAD_ID_PATH), { recursive: true });
+      writeFileSync(CODEX_MAIN_AGENT_THREAD_ID_PATH, event.thread_id, "utf-8");
+    }
+  });
+
+  mainAgent = agent;
+  return agent;
 }

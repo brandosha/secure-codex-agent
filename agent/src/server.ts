@@ -6,9 +6,9 @@ import { WSContext } from "hono/ws";
 import { WebSocketServer } from "ws";
 import { z } from "zod";
 
-import { Agent, PromptOptions, promptOptionsSchema } from "./agent";
+import { getMainAgent, PromptOptions, promptOptionsSchema } from "./agent";
 
-const agent = new Agent();
+const agent = getMainAgent();
 const app = new Hono();
 
 const websocketRequestSchema = z.discriminatedUnion("type", [

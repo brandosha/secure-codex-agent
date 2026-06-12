@@ -23,6 +23,8 @@ services:
       - GIT_USER_EMAIL=${GIT_USER_EMAIL}
     ports:
       - "8002:80"
+    depends_on:
+      - agent
 
 volumes:
   codex-home:

@@ -1,17 +1,12 @@
-import { readFileSync, writeFileSync } from "fs";
+import { Codex, Thread, ThreadEvent } from "@openai/codex-sdk";
 
-import { Codex, CodexOptions, Thread, ThreadEvent, ThreadOptions } from "@openai/codex-sdk";
-
-import { agentRequestMessageSchema, AgentRequestMessage, PromptOptions } from "./agent";
+import { agentRequestMessageSchema, PromptOptions } from "./agent";
 import { PubSub } from "./PubSub";
 
 if (!process.send) {
   console.error("This script is meant to be run as a child process.");
   process.exit(1);
 }
-
-const CODEX_THREAD_ID_PATH = "/home/agent/codex_thread_id.txt";
-
 
 class CodexPromptTask {
   thread: Thread;
@@ -58,10 +53,7 @@ class CodexAgent extends PubSub<ThreadEvent> {
 
   constructor() {
     super();
-    try {
-      this._threadId = readFileSync(CODEX_THREAD_ID_PATH, "utf-8");
-    } catch (err) {
-    }
+    this._threadId = process.env.CODEX_THREAD_ID?.trim() || undefined;
   }
 
   private _getThread(options?: PromptOptions): Thread {
@@ -106,7 +98,6 @@ class CodexAgent extends PubSub<ThreadEvent> {
         for await (const event of task.run()) {
           if (event.type === "thread.started" && !this._threadId) {
             this._threadId = event.thread_id;
-            writeFileSync(CODEX_THREAD_ID_PATH, this._threadId);
           }
 
           this.publish(event);
