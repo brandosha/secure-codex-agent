@@ -12,3 +12,11 @@ export function mcpTextResult(text: string, isError = false) {
     }],
   };
 }
+
+export function redactSecrets(text: string, secrets: string[]) {
+  let redactedText = text;
+  for (const secret of secrets) {
+    redactedText = redactedText.replaceAll(secret, "[REDACTED]");
+  }
+  return redactedText;
+}

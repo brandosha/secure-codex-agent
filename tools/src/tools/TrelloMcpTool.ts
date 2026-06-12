@@ -2,6 +2,7 @@ import { McpServer } from "@modelcontextprotocol/server";
 import { z } from "zod";
 
 import { McpTool } from "./base";
+import { redactSecrets } from "../utils";
 
 export class TrelloMcpTool extends McpTool {
   constructor() {
@@ -201,12 +202,15 @@ export function parseTrelloEndpoint(endpoint: string) {
 }
 
 export function normalizeTrelloEndpoint(endpoint: string) {
-  const trimmed = endpoint.trim();
-  if (!trimmed) {
+  endpoint = endpoint.trim();
+  if (!endpoint) {
     throw new TrelloAuthorizationError("Trello endpoint cannot be empty.");
   }
 
-  const withoutOrigin = trimmed.replace(/^https?:\/\/[^/]+/i, "");
+  if (!endpoint.startsWith("/")) endpoint = `/${endpoint}`;
+  if (!endpoint.startsWith("/1")) endpoint = `/1${endpoint}`;
+
+  const withoutOrigin = endpoint.replace(/^https?:\/\/[^/]+/i, "");
   return withoutOrigin.startsWith("/") ? withoutOrigin : `/${withoutOrigin}`;
 }
 
@@ -308,26 +312,40 @@ export async function makeTrelloApiRequest(request: TrelloApiRequest) {
   const clientIdentifier = request.clientIdentifier ?? TRELLO_CLIENT_IDENTIFIER;
   const endpoint = normalizeTrelloEndpoint(request.endpoint);
 
-  const url = new URL(`/1${endpoint}`, "https://api.trello.com");
-  url.searchParams.set("key", apiKey);
-  url.searchParams.set("token", token);
+  const url = new URL(`${endpoint}`, "https://api.trello.com");
 
   const options: RequestInit = {
     method: request.method,
     headers: {
+      "Authorization": `OAuth oauth_consumer_key="${apiKey}", oauth_token="${token}"`,
       "Content-Type": "application/json",
       "X-Trello-Client-Identifier": clientIdentifier,
     },
   };
 
   if (request.body) {
-    options.body = JSON.stringify(request.body);
+    if (request.method === "GET") {
+      Object.entries(request.body).forEach(([key, value]) => {
+        url.searchParams.set(key, String(value));
+      });
+    } else {
+      options.body = JSON.stringify(request.body);
+    }
   }
 
-  const response = await fetch(url.toString(), options);
+  const response = await fetch(url.toString(), options).catch((error) => {
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    throw new Error(redactSecrets(
+      `Error fetching Trello API: ${errorMessage}`,
+      [apiKey, token]
+    ));
+  });
   if (!response.ok) {
     const errorText = await response.text();
-    throw new Error(`Trello API request failed: ${response.status} ${response.statusText}\n${errorText}`);
+    throw new Error(redactSecrets(
+      `Trello API request failed: ${response.status} ${response.statusText}\n${errorText}`,
+      [apiKey, token],
+    ));
   }
 
   return await response.json();
