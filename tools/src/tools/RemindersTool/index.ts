@@ -61,7 +61,7 @@ function buildRemindersMcpServer() {
   });
 
   mcp.registerTool("create_reminder", {
-    description: "Create an active idle reminder for the agent.",
+    description: "Create an active reminder for something the agent should revisit after the current work finishes. Use this when the user adds a follow-up, side task, constraint, or request while the agent is already busy and it should not interrupt the current flow. Active reminders are shown again after each completed turn until deleted.",
     inputSchema: createReminderSchema,
   }, async (input) => {
     await ready;
@@ -91,7 +91,7 @@ function buildRemindersMcpServer() {
   });
 
   mcp.registerTool("update_reminder", {
-    description: "Replace an existing reminder's content.",
+    description: "Replace an existing reminder's content when the remembered follow-up changes, becomes more specific, or needs clearer wording before it is revisited after the current work finishes.",
     inputSchema: updateReminderSchema,
   }, async (input) => {
     await ready;
@@ -121,7 +121,7 @@ function buildRemindersMcpServer() {
   });
 
   mcp.registerTool("delete_reminder", {
-    description: "Delete a reminder when it is done or no longer relevant.",
+    description: "Delete a reminder as soon as it has been handled, folded into the current work, or is no longer relevant. Completion is represented by deletion so reminders do not accumulate indefinitely.",
     inputSchema: z.object({
       id: z.string().trim().min(1),
     }),
@@ -147,7 +147,7 @@ function buildRemindersMcpServer() {
   });
 
   mcp.registerTool("list_reminders", {
-    description: "List all active idle reminders.",
+    description: "List all active reminders waiting to be revisited after the agent becomes idle. Use this to check pending follow-ups before deciding whether to create, update, or delete reminders.",
   }, async () => {
     await ready;
 
