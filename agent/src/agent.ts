@@ -87,6 +87,11 @@ export class Agent extends PubSub<ThreadEvent> {
   private _send(req: AgentRequestMessage) {
     this._agentProcess.send(req);
   }
+
+  kill() {
+    this._agentProcess.kill();
+    this._clearSubscriptions();
+  }
 }
 
 let mainAgent: Agent | undefined;

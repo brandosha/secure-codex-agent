@@ -7,6 +7,9 @@ import { WebSocketServer } from "ws";
 import { z } from "zod";
 
 import { getMainAgent, PromptOptions, promptOptionsSchema } from "./agent";
+import { serveSubagentMcp, withSubagentMcpServer } from "./subagents";
+
+serveSubagentMcp();
 
 const agent = getMainAgent();
 const app = new Hono();
@@ -73,9 +76,9 @@ app.get("/", upgradeWebSocket(async (c) => {
         if (data.type === "abort") {
           agent.abort();
         } else if (data.type === "prompt") {
-          agent.prompt(data.message, promptOptions);
+          agent.prompt(data.message, withSubagentMcpServer(promptOptions));
         } else if (data.type === "config") {
-          promptOptions = data.config;
+          promptOptions = withSubagentMcpServer(data.config);
         }
       } catch (err) {
         console.error("Error handling message:", err);

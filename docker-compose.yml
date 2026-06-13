@@ -4,6 +4,7 @@ services:
     restart: unless-stopped
     volumes:
       - ./workspace:/home/agent/workspace
+      - ./agent/data:/home/agent/.secure-codex-agent
       - codex-home:/home/agent/.codex
     environment:
       - CODEX_HOME=/home/agent/.codex

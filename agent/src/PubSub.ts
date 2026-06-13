@@ -13,4 +13,8 @@ export class PubSub<EventType> {
       this._subs = this._subs.filter((cb) => cb !== callback);
     };
   }
+
+  _clearSubscriptions() {
+    this._subs = [];
+  }
 }
