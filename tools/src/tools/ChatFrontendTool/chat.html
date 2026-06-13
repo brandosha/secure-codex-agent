@@ -583,18 +583,34 @@
   <script>
     var chat = {
       ws: null,
+      reconnectTimer: null,
+      reconnectDelayMs: 3000,
       sendPrompt(input) {
         if (this.ws && this.ws.readyState === WebSocket.OPEN) {
           this.ws.send(JSON.stringify({ type: "prompt", input }));
+          return true;
         } else {
           console.error("WebSocket is not open. Unable to send prompt.");
+          appendEvent({
+            type: "frontend.send_error",
+            message: "Cannot send prompt while disconnected. Reconnecting...",
+          });
+          scheduleReconnect();
+          return false;
         }
       },
       sendAbort() {
         if (this.ws && this.ws.readyState === WebSocket.OPEN) {
           this.ws.send(JSON.stringify({ type: "abort" }));
+          return true;
         } else {
           console.error("WebSocket is not open. Unable to send abort.");
+          appendEvent({
+            type: "frontend.send_error",
+            message: "Cannot stop the agent while disconnected. Reconnecting...",
+          });
+          scheduleReconnect();
+          return false;
         }
       }
     };
@@ -613,6 +629,24 @@
     function setStatus(state, label) {
       elements.statusPill.dataset.state = state;
       elements.statusText.textContent = label;
+    }
+
+    function clearReconnectTimer() {
+      if (chat.reconnectTimer) {
+        clearTimeout(chat.reconnectTimer);
+        chat.reconnectTimer = null;
+      }
+    }
+
+    function scheduleReconnect() {
+      if (chat.reconnectTimer) {
+        return;
+      }
+
+      chat.reconnectTimer = setTimeout(() => {
+        chat.reconnectTimer = null;
+        connect();
+      }, chat.reconnectDelayMs);
     }
 
     function updateEventCount() {
@@ -1178,6 +1212,7 @@
     }
 
     async function connect() {
+      clearReconnectTimer();
       setStatus("connecting", "Connecting");
 
       try {
@@ -1190,7 +1225,7 @@
         const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
         const socketUrl = `${protocol}//${window.location.host}/chat/ws?token=${encodeURIComponent(token)}`;
 
-        if (chat.ws) {
+        if (chat.ws && chat.ws.readyState !== WebSocket.CLOSED) {
           chat.ws.close();
         }
 
@@ -1198,10 +1233,18 @@
         chat.ws = ws;
 
         ws.addEventListener("open", () => {
+          if (chat.ws !== ws) {
+            return;
+          }
+
           setStatus("connected", "Connected");
         });
 
         ws.addEventListener("message", (event) => {
+          if (chat.ws !== ws) {
+            return;
+          }
+
           try {
             appendEvent(JSON.parse(event.data));
           } catch (error) {
@@ -1215,11 +1258,21 @@
         });
 
         ws.addEventListener("close", () => {
+          if (chat.ws !== ws) {
+            return;
+          }
+
           setStatus("closed", "Disconnected");
+          scheduleReconnect();
         });
 
         ws.addEventListener("error", () => {
+          if (chat.ws !== ws) {
+            return;
+          }
+
           setStatus("error", "Socket Error");
+          scheduleReconnect();
         });
       } catch (error) {
         setStatus("error", "Connection Failed");
@@ -1227,6 +1280,7 @@
           type: "frontend.connection_error",
           message: error instanceof Error ? error.message : String(error),
         });
+        scheduleReconnect();
       }
     }
 
@@ -1258,7 +1312,12 @@
         event.preventDefault();
         const input = elements.promptInput.value.trim();
         if (!input) return;
-        chat.sendPrompt(input);
+        const sent = chat.sendPrompt(input);
+        if (!sent) {
+          elements.promptInput.focus();
+          return;
+        }
+
         elements.promptInput.value = "";
         elements.promptInput.focus();
       });
