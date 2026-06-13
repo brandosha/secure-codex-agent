@@ -3,5 +3,6 @@ export * from "./ChatFrontendTool";
 export * from "./CronTool";
 export * from "./GitMcpTool";
 export * from "./NewRelicMcpTool";
+export * from "./RemindersTool";
 export * from "./ScheduleMcpTool";
 export * from "./TrelloMcpTool";
