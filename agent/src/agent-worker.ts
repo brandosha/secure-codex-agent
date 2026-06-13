@@ -49,6 +49,7 @@ class CodexPromptTask {
 
 class CodexAgent extends PubSub<ThreadEvent> {
   private _promptQueue: CodexPromptTask[] = [];
+  private _currentTask?: CodexPromptTask;
   private _threadId?: string;
 
   constructor() {
@@ -93,6 +94,7 @@ class CodexAgent extends PubSub<ThreadEvent> {
 
     while (this._promptQueue.length > 0) {
       const task = this._promptQueue.shift()!;
+      this._currentTask = task;
 
       try {
         for await (const event of task.run()) {
@@ -102,8 +104,14 @@ class CodexAgent extends PubSub<ThreadEvent> {
 
           this.publish(event);
         }
-      } catch (err) {
-        console.error("Error processing prompt task:", err);
+      } catch (err: any) {
+        if (err.name !== "AbortError") {
+          console.error("Error processing prompt task:", err);
+        }
+      } finally {
+        if (this._currentTask === task) {
+          this._currentTask = undefined;
+        }
       }
     }
 
@@ -111,6 +119,7 @@ class CodexAgent extends PubSub<ThreadEvent> {
   }
 
   abort() {
+    this._currentTask?.abort();
     this._promptQueue.forEach((task) => task.abort());
   }
 }
