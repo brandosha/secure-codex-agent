@@ -19,6 +19,7 @@ import {
   type LifecycleStatus,
   type Subagent,
 } from "./db";
+import type { SubagentInputEvent } from "./db/schema";
 
 const SUBAGENT_ID_PATTERN = /^[a-zA-Z0-9_-]{1,63}$/;
 const DEFAULT_WAIT_TIMEOUT_MS = 300_000;
@@ -296,6 +297,10 @@ class SubagentManager {
     await createSubagent({ id: input.id, name: input.name });
     this._mcp.sendResourceListChanged();
     const agent = await this._getOrCreateLiveAgent(input.id);
+    await this._recordInputEvent(input.id, {
+      type: "input.prompt",
+      prompt: input.prompt,
+    });
     agent.prompt(input.prompt);
 
     return this._summary(input.id);
@@ -304,6 +309,10 @@ class SubagentManager {
   async prompt(input: PromptInput) {
     await this._requireSubagent(input.id);
     const agent = await this._getOrCreateLiveAgent(input.id);
+    await this._recordInputEvent(input.id, {
+      type: "input.prompt",
+      prompt: input.prompt,
+    });
     agent.prompt(input.prompt);
     return this._summary(input.id);
   }
@@ -315,6 +324,7 @@ class SubagentManager {
       throw new Error(`Subagent '${input.id}' is not live in this server process.`);
     }
 
+    await this._recordInputEvent(input.id, { type: "input.abort" });
     liveSubagent.agent.abort();
     return this._summary(input.id);
   }
@@ -446,6 +456,14 @@ class SubagentManager {
       await this._notifyStatusUpdated(id);
       await this._resolveWaiters(id, nextStatus, latestEventId);
     }
+  }
+
+  private async _recordInputEvent(id: string, event: SubagentInputEvent) {
+    await insertSubagentEvent({
+      subagentId: id,
+      eventType: event.type,
+      eventData: event,
+    });
   }
 
   private async _notifyStatusUpdated(id: string) {
