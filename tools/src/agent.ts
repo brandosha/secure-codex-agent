@@ -27,16 +27,28 @@ export interface PersistedAgentEvent {
 }
 
 export class Agent extends PubSub<AgentEvent> {
-  private _ws: WebSocket;
-  private _ready: Promise<void>;
+  private _readyWaiters = new Set<(ws: WebSocket) => void>();
+  private _reconnectTimer?: NodeJS.Timeout;
+  private _ws?: WebSocket;
 
   constructor(address: string) {
     super();
-    this._ws = new WebSocket(address);
-    this._ready = new Promise((resolve) => {
-      this._ws.on("open", resolve);
+    this._connect(address);
+  }
+
+  private _connect(address: string) {
+    const ws = new WebSocket(address);
+    this._ws = ws;
+
+    ws.on("open", () => {
+      console.log(`Connected to agent websocket at ${address}`);
+      for (const resolve of this._readyWaiters) {
+        resolve(ws);
+      }
+      this._readyWaiters.clear();
     });
-    this._ws.on("message", (data) => {
+
+    ws.on("message", (data) => {
       try {
         const message = JSON.parse(data.toString()) as AgentEvent;
         this.#recordAndPublish(message);
@@ -44,11 +56,37 @@ export class Agent extends PubSub<AgentEvent> {
         console.error("Error parsing message:", err, data);
       }
     });
+
+    ws.on("error", (err) => {
+      console.error(`Agent websocket error: ${err.message}`);
+    });
+
+    ws.on("close", () => {
+      if (this._ws === ws) {
+        this._ws = undefined;
+      }
+      if (!this._reconnectTimer) {
+        this._reconnectTimer = setTimeout(() => {
+          this._reconnectTimer = undefined;
+          this._connect(address);
+        }, 1000);
+      }
+    });
   }
 
   private async _send(req: WebSocketRequest) {
-    await this._ready;
-    this._ws.send(JSON.stringify(req));
+    const ws = await this._waitUntilReady();
+    ws.send(JSON.stringify(req));
+  }
+
+  private async _waitUntilReady(): Promise<WebSocket> {
+    if (this._ws?.readyState === WebSocket.OPEN) {
+      return this._ws;
+    }
+
+    return new Promise<WebSocket>((resolve) => {
+      this._readyWaiters.add(resolve);
+    });
   }
 
   config(options: PromptOptions) {

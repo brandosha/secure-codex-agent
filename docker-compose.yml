@@ -2,6 +2,12 @@ services:
   agent:
     build: ./agent
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "node", "-e", "const net=require('net'); const s=net.connect(80,'127.0.0.1',()=>process.exit(0)); s.on('error',()=>process.exit(1)); s.setTimeout(1000,()=>process.exit(1));"]
+      interval: 2s
+      timeout: 2s
+      retries: 30
+      start_period: 5s
     volumes:
       - ./workspace:/home/agent/workspace
       - ./agent/data:/home/agent/.secure-codex-agent
@@ -25,7 +31,8 @@ services:
     ports:
       - "8002:80"
     depends_on:
-      - agent
+      agent:
+        condition: service_healthy
 
 volumes:
   codex-home:

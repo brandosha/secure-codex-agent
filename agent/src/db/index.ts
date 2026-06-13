@@ -1,11 +1,11 @@
 import { mkdirSync } from "fs";
 import path from "path";
 
-import { eq, and, asc, desc, max, sql } from 'drizzle-orm';
-import { drizzle } from "drizzle-orm/better-sqlite3"
+import { and, desc, eq, max, sql } from "drizzle-orm";
+import { drizzle } from "drizzle-orm/better-sqlite3";
 import { migrate } from "drizzle-orm/better-sqlite3/migrator";
 
-import { subagentEvents } from "./schema"
+import { subagentEvents, subagents, type NewSubagentEvent } from "./schema";
 
 export const AGENT_DATA_DIRECTORY = "/home/agent/.secure-codex-agent";
 export const DATABASE_PATH = path.join(AGENT_DATA_DIRECTORY, "agent-data.sqlite");
@@ -16,58 +16,98 @@ const __dirname = import.meta.dirname;
 export const db = drizzle(DATABASE_PATH);
 migrate(db, { migrationsFolder: path.join(__dirname, "../../drizzle") });
 
+export type Subagent = typeof subagents.$inferSelect;
+export type LifecycleStatus = "started" | "running" | "completed" | "failed";
 
-interface GetThreadHistoryParams {
-  subagentId: string;
-  limit: number;
-  offset: number;
+export async function createSubagent(input: { id: string; name: string }) {
+  return db.insert(subagents).values({
+    id: input.id,
+    name: input.name,
+    archived: false,
+  });
 }
 
-/**
- * Fetches a single thread's history in reverse chronological order (newest first).
- * Generates an incremental 'threadEventId' starting from #1 for the oldest message.
- */
-export async function getThreadHistory({ subagentId: threadId, limit, offset }: GetThreadHistoryParams) {
-  return await db
-    .select({
-      id: subagentEvents.id,
-      threadId: subagentEvents.subagentId,
-      eventData: subagentEvents.eventData,
-      createdAt: subagentEvents.createdAt,
-      // Calculates thread-specific sequential IDs (#1, #2, #3...) globally
-      threadEventId: sql<number>`row_number() OVER (
-        PARTITION BY ${subagentEvents.subagentId}
-        ORDER BY ${subagentEvents.id} ASC
-      )`,
-      // threadEventId: rowNumber()
-      //   .over({
-      //     partitionBy: subagentEvents.threadId,
-      //     orderBy: asc(subagentEvents.id), 
-      //   })
-      //   .as('thread_event_id'),
-    })
+export async function getSubagent(id: string) {
+  const [subagent] = await db.select().from(subagents).where(eq(subagents.id, id)).limit(1);
+  return subagent;
+}
+
+export async function listUnarchivedSubagents() {
+  return db.select().from(subagents).where(eq(subagents.archived, false));
+}
+
+export async function archiveSubagent(id: string) {
+  return db.update(subagents).set({ archived: true }).where(eq(subagents.id, id));
+}
+
+export async function updateSubagentThreadId(id: string, codexThreadId: string) {
+  return db.update(subagents).set({ codexThreadId }).where(eq(subagents.id, id));
+}
+
+export async function insertSubagentEvent(event: NewSubagentEvent) {
+  return db.insert(subagentEvents).values(event).returning({ id: subagentEvents.id });
+}
+
+export async function getLatestSubagentEvent(subagentId: string) {
+  const [event] = await db
+    .select()
     .from(subagentEvents)
-    .where(eq(subagentEvents.subagentId, threadId))
-    // Flips the final result page to show newest items first
-    .orderBy(desc(subagentEvents.id)) 
-    .limit(limit)
-    .offset(offset);
+    .where(eq(subagentEvents.subagentId, subagentId))
+    .orderBy(desc(subagentEvents.id))
+    .limit(1);
+  return event;
 }
 
-/**
- * Efficiently finds and returns the full data of the latest event from every single thread.
- * Leverages the (threadId, id DESC) index skip-scan capability.
- */
+export async function getLatestAssistantMessage(subagentId: string) {
+  const [event] = await db
+    .select()
+    .from(subagentEvents)
+    .where(
+      and(
+        eq(subagentEvents.subagentId, subagentId),
+        eq(subagentEvents.eventType, "item.completed"),
+        eq(subagentEvents.itemType, "agent_message"),
+      ),
+    )
+    .orderBy(desc(subagentEvents.id))
+    .limit(1);
+
+  if (event?.eventData.type === "item.completed" && event.eventData.item.type === "agent_message") {
+    return event.eventData.item.text;
+  }
+
+  return undefined;
+}
+
+export async function getSubagentStatus(subagentId: string): Promise<LifecycleStatus> {
+  const event = await getLatestSubagentEvent(subagentId);
+  return getStatusFromEvent(event?.eventType);
+}
+
+function getStatusFromEvent(eventType?: string): LifecycleStatus {
+  if (!eventType) {
+    return "started";
+  }
+
+  if (eventType === "turn.completed") {
+    return "completed";
+  }
+
+  if (eventType === "turn.failed" || eventType === "error") {
+    return "failed";
+  }
+
+  return "running";
+}
+
 export async function getLatestEventPerThread() {
-  // 1. Subquery to grab the highest ID grouped by threadId
   const latestIdsSubquery = db
-    .select({ latestId: max(subagentEvents.id).as('latest_id') })
+    .select({ latestId: max(subagentEvents.id).as("latest_id") })
     .from(subagentEvents)
     .groupBy(subagentEvents.subagentId)
-    .as('latest_ids');
+    .as("latest_ids");
 
-  // 2. Join back to the main table to get full row payloads
-  return await db
+  return db
     .select({
       id: subagentEvents.id,
       threadId: subagentEvents.subagentId,
@@ -75,10 +115,7 @@ export async function getLatestEventPerThread() {
       createdAt: subagentEvents.createdAt,
     })
     .from(subagentEvents)
-    .innerJoin(
-      latestIdsSubquery, 
-      eq(subagentEvents.id, latestIdsSubquery.latestId)
-    );
+    .innerJoin(latestIdsSubquery, eq(subagentEvents.id, latestIdsSubquery.latestId));
 }
 
 interface QuerySubagentEventsParams {
@@ -93,5 +130,23 @@ interface QuerySubagentEventsParams {
 }
 
 export async function querySubagentEvents({ subagentId, limit, offset, filter }: QuerySubagentEventsParams) {
-  
+  const filters = [eq(subagentEvents.subagentId, subagentId)];
+
+  if (filter?.eventType) {
+    filters.push(eq(subagentEvents.eventType, filter.eventType));
+  }
+  if (filter?.itemType) {
+    filters.push(eq(subagentEvents.itemType, filter.itemType));
+  }
+  if (filter?.itemId) {
+    filters.push(eq(subagentEvents.itemId, filter.itemId));
+  }
+
+  return db
+    .select()
+    .from(subagentEvents)
+    .where(and(...filters))
+    .orderBy(desc(subagentEvents.id))
+    .limit(limit)
+    .offset(offset);
 }
