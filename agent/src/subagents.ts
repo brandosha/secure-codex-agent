@@ -19,7 +19,7 @@ import {
   type LifecycleStatus,
   type Subagent,
 } from "./db";
-import type { SubagentInputEvent } from "./db/schema";
+import { SUBAGENT_EVENT_TYPES, SUBAGENT_ITEM_TYPES, type SubagentInputEvent } from "./db/schema";
 
 const SUBAGENT_ID_PATTERN = /^[a-zA-Z0-9_-]{1,63}$/;
 const DEFAULT_WAIT_TIMEOUT_MS = 300_000;
@@ -45,8 +45,8 @@ const queryEventsInputSchema = z.object({
   limit: z.number().gt(0).lte(50),
   offset: z.number().gte(0).optional(),
   filter: z.object({
-    eventType: z.string().optional(),
-    itemType: z.string().optional(),
+    eventType: z.enum(SUBAGENT_EVENT_TYPES).optional(),
+    itemType: z.enum(SUBAGENT_ITEM_TYPES).optional(),
     itemId: z.string().optional(),
   }).optional(),
 });

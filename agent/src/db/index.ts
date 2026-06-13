@@ -5,7 +5,7 @@ import { and, desc, eq, max, sql } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/better-sqlite3";
 import { migrate } from "drizzle-orm/better-sqlite3/migrator";
 
-import { subagentEvents, subagents, type NewSubagentEvent } from "./schema";
+import { subagentEvents, subagents, type NewSubagentEvent, type SubagentEventType, type SubagentItemType } from "./schema";
 
 export const AGENT_DATA_DIRECTORY = "/home/agent/.secure-codex-agent";
 export const DATABASE_PATH = path.join(AGENT_DATA_DIRECTORY, "agent-data.sqlite");
@@ -84,7 +84,7 @@ export async function getSubagentStatus(subagentId: string): Promise<LifecycleSt
   return getStatusFromEvent(event?.eventType);
 }
 
-function getStatusFromEvent(eventType?: string): LifecycleStatus {
+function getStatusFromEvent(eventType?: SubagentEventType): LifecycleStatus {
   if (!eventType) {
     return "started";
   }
@@ -123,8 +123,8 @@ interface QuerySubagentEventsParams {
   limit: number;
   offset: number;
   filter?: {
-    eventType?: string;
-    itemType?: string;
+    eventType?: SubagentEventType;
+    itemType?: SubagentItemType;
     itemId?: string;
   };
 }
