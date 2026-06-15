@@ -29,16 +29,13 @@ export class WebhookTool extends Tool {
 
 const mcpAuthToken = crypto.randomUUID();
 
-export type McpServerBuilder = () => McpServer;
-
 export class McpTool extends Tool {
   name: string;
   route: string;
 
-  constructor(name: string, mcpBuilder: McpServerBuilder) {
+  constructor(name: string, mcp: McpServer) {
     const route = `/mcp/${name}`;
     super((server, agent) => {
-      const mcp = mcpBuilder();
       const transport = new WebStandardStreamableHTTPServerTransport();
       const connected = mcp.connect(transport);
 

@@ -4,22 +4,21 @@ import { z } from "zod";
 import { McpTool } from "./base";
 import { redactSecrets } from "../utils";
 
+interface TrelloMcpToolOptions {
+  apiKey: string;
+  token: string;
+}
+
 export class TrelloMcpTool extends McpTool {
-  constructor() {
-    super("trello", trelloMcpServerBuilder);
+  constructor(options: TrelloMcpToolOptions) {
+    super("trello", createTrelloMcpServer(options));
   }
 }
 
-function trelloMcpServerBuilder() {
-  const { TRELLO_API_KEY, TRELLO_TOKEN } = process.env;
-
-  if (!TRELLO_API_KEY || !TRELLO_TOKEN) {
-    throw new Error("TRELLO_API_KEY and TRELLO_TOKEN environment variables must be set");
-  }
-
+function createTrelloMcpServer(options: TrelloMcpToolOptions) {
   const currentMemberIdPromise = getCurrentMemberId({
-    apiKey: TRELLO_API_KEY,
-    token: TRELLO_TOKEN,
+    apiKey: options.apiKey,
+    token: options.token,
   });
 
   const mcp = new McpServer({
@@ -37,8 +36,8 @@ function trelloMcpServerBuilder() {
   }, async (input) => {
     try {
       await authorizeTrelloRequest({
-        apiKey: TRELLO_API_KEY,
-        token: TRELLO_TOKEN,
+        apiKey: options.apiKey,
+        token: options.token,
         method: input.method,
         endpoint: input.endpoint,
         currentMemberIdPromise,
@@ -48,8 +47,8 @@ function trelloMcpServerBuilder() {
         method: input.method,
         endpoint: input.endpoint,
         body: input.body,
-        apiKey: TRELLO_API_KEY,
-        token: TRELLO_TOKEN,
+        apiKey: options.apiKey,
+        token: options.token,
         clientIdentifier: "TrelloMcpTool",
       });
 
@@ -90,8 +89,8 @@ function trelloMcpServerBuilder() {
         method: "POST",
         endpoint: "/cards",
         body: buildCreateCardBody(input.body, currentMemberId),
-        apiKey: TRELLO_API_KEY,
-        token: TRELLO_TOKEN,
+        apiKey: options.apiKey,
+        token: options.token,
         clientIdentifier: "TrelloMcpTool",
       });
 

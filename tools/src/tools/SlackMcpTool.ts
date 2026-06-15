@@ -6,19 +6,17 @@ import { z } from "zod";
 import { McpTool, WORKSPACE_PATH } from "./base";
 import { redactSecrets } from "../utils";
 
+interface SlackMcpToolOptions {
+  token: string;
+}
+
 export class SlackMcpTool extends McpTool {
-  constructor() {
-    super("slack", slackMcpServerBuilder);
+  constructor(options: SlackMcpToolOptions) {
+    super("slack", createSlackMcpServer(options));
   }
 }
 
-function slackMcpServerBuilder() {
-  const slackToken = process.env.SLACK_BOT_TOKEN ?? process.env.SLACK_TOKEN;
-
-  if (!slackToken) {
-    throw new Error("SLACK_BOT_TOKEN or SLACK_TOKEN environment variable must be set");
-  }
-
+function createSlackMcpServer(options: SlackMcpToolOptions) {
   const mcp = new McpServer({
     name: "Slack MCP Tool",
     version: "0.0.1",
@@ -34,7 +32,7 @@ function slackMcpServerBuilder() {
   }, async (input) => {
     try {
       const response = await makeSlackApiRequest({
-        token: slackToken,
+        token: options.token,
         method: input.method,
         endpoint: input.endpoint,
         body: input.body,
@@ -111,7 +109,7 @@ function slackMcpServerBuilder() {
   }, async (input) => {
     try {
       const response = await uploadSlackFileFromWorkspace({
-        token: slackToken,
+        token: options.token,
         filePath: input.file_path,
         channels: normalizeSlackChannels(input.channels),
         filename: input.filename,

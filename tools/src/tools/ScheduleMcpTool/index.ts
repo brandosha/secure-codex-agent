@@ -34,11 +34,11 @@ type ScheduleRecord = Record<string, PersistedSchedule>;
 
 export class ScheduleMcpTool extends McpTool {
   constructor() {
-    super("schedule", buildScheduleMcpServer);
+    super("schedule", createScheduleMcpServer());
   }
 }
 
-function buildScheduleMcpServer() {
+function createScheduleMcpServer() {
   const jobs = new Map<string, CronJob>();
   const schedules: ScheduleRecord = {};
   const stateMutex = createMutex();

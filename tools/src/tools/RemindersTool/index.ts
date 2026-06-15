@@ -33,11 +33,11 @@ type ReminderRecord = Record<string, PersistedReminder>;
 
 export class RemindersTool extends McpTool {
   constructor() {
-    super("reminders", buildRemindersMcpServer);
+    super("reminders", createRemindersMcpServer());
   }
 }
 
-function buildRemindersMcpServer() {
+function createRemindersMcpServer() {
   const reminders: ReminderRecord = {};
   const stateMutex = createMutex();
   let reminderPromptQueued = false;

@@ -3,19 +3,17 @@ import { z } from "zod";
 
 import { McpTool } from "./base";
 
+interface NewRelicMcpToolOptions {
+  apiKey: string;
+}
+
 export class NewRelicMcpTool extends McpTool {
-  constructor() {
-    super("newrelic", newrelicMcpServerBuilder);
+  constructor(options: NewRelicMcpToolOptions) {
+    super("newrelic", createNewRelicMcpServer(options));
   }
 }
 
-function newrelicMcpServerBuilder() {
-  const { NEWRELIC_API_KEY } = process.env;
-
-  if (!NEWRELIC_API_KEY) {
-    throw new Error("NEWRELIC_API_KEY environment variable must be set");
-  }
-
+function createNewRelicMcpServer(options: NewRelicMcpToolOptions) {
   const mcp = new McpServer({
     name: "New Relic MCP Tool",
     version: "0.0.1",
@@ -28,7 +26,7 @@ function newrelicMcpServerBuilder() {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        "API-Key": NEWRELIC_API_KEY,
+        "API-Key": options.apiKey,
       },
       body: JSON.stringify({
         query: `
@@ -66,7 +64,7 @@ function newrelicMcpServerBuilder() {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        "API-Key": NEWRELIC_API_KEY,
+        "API-Key": options.apiKey,
       },
       body: JSON.stringify({
         query: `
