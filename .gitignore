@@ -3,7 +3,13 @@ node_modules/
 
 .env
 
-workspace/
 data/
+workspace/*
+!workspace/.browser/
+workspace/.browser/*
+!workspace/.browser/browser_helper.py
 
 .DS_Store
+
+__pycache__/
+*.py[cod]

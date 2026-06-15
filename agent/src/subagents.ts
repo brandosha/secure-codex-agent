@@ -250,6 +250,9 @@ export function withSubagentMcpServer(options: PromptOptions): PromptOptions {
               Authorization: `Bearer ${subagentMcpAuthToken}`,
             },
           },
+          browser: {
+            url: `http://browser:8000/mcp`,
+          }
         },
       },
     },

@@ -33,6 +33,13 @@ services:
     depends_on:
       agent:
         condition: service_healthy
+  browser:
+    build: ./browser
+    restart: unless-stopped
+    volumes:
+      - ./workspace:/home/agent/workspace
+    environment:
+      - HOST_UID=${HOST_UID}
 
 volumes:
   codex-home:
