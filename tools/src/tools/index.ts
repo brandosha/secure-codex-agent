@@ -5,4 +5,5 @@ export * from "./GitMcpTool";
 export * from "./NewRelicMcpTool";
 export * from "./RemindersTool";
 export * from "./ScheduleMcpTool";
+export * from "./SlackMcpTool";
 export * from "./TrelloMcpTool";

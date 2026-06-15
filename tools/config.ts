@@ -1,4 +1,4 @@
-import { agentTools, ChatFrontendTool, GitMcpTool, NewRelicMcpTool, RemindersTool, ScheduleMcpTool, TrelloMcpTool } from "./src/tools";
+import { agentTools, ChatFrontendTool, GitMcpTool, NewRelicMcpTool, RemindersTool, ScheduleMcpTool, SlackMcpTool, TrelloMcpTool } from "./src/tools";
 
 
 agentTools([
@@ -10,6 +10,7 @@ agentTools([
   }),
   new ChatFrontendTool(),
   new TrelloMcpTool(),
+  new SlackMcpTool(),
   new NewRelicMcpTool(),
   new ScheduleMcpTool(),
   new RemindersTool(),
