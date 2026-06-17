@@ -1,5 +1,6 @@
 import os
 import asyncio
+import json
 from fastapi import FastAPI
 from contextlib import asynccontextmanager
 from fastmcp import FastMCP
@@ -13,6 +14,19 @@ playwright = None
 browser_context = None
 BROWSER_PROFILE_DIR = "/home/agent/.browser-data/profile"
 PAGE_NAME_PROPERTY = "__SECURE_CODEX_AGENT_PAGE_NAME__"
+
+def build_page_name_script(page_name: str) -> str:
+    serialized_page_name = json.dumps(page_name)
+    return f"""
+(() => {{
+    Object.defineProperty(window, "{PAGE_NAME_PROPERTY}", {{
+        value: {serialized_page_name},
+        configurable: true,
+        enumerable: false,
+        writable: false,
+    }});
+}})()
+"""
 
 async def wait_for_debug_port(host: str = "127.0.0.1", port: int = 9222, timeout: float = 10.0):
     deadline = asyncio.get_running_loop().time() + timeout
@@ -83,6 +97,124 @@ async def list_browser_pages() -> list[dict[str, str | None]]:
         })
 
     return pages
+
+
+@mcp.tool()
+async def open_browser_page(page_name: str, url: str) -> dict[str, str]:
+    """Open or reuse a named browser page and navigate it to the requested URL."""
+    if browser_context is None:
+        raise RuntimeError("Persistent Chromium is not initialized")
+    if not isinstance(page_name, str) or not page_name.strip():
+        raise ValueError("page_name must be a non-empty string")
+    if not isinstance(url, str) or not url.strip():
+        raise ValueError("url must be a non-empty string")
+
+    matching_pages = []
+    for page in browser_context.pages:
+        if (
+            not page.is_closed()
+            and await page.evaluate(f"window.{PAGE_NAME_PROPERTY} ?? null") == page_name
+        ):
+            matching_pages.append(page)
+
+    if len(matching_pages) > 1:
+        raise RuntimeError(f"Multiple browser pages are named {page_name!r}")
+
+    page = matching_pages[0] if matching_pages else await browser_context.new_page()
+    page_name_script = build_page_name_script(page_name)
+    await page.add_init_script(page_name_script)
+    await page.evaluate(page_name_script)
+    await page.goto(url)
+
+    return {
+        "name": page_name,
+        "url": page.url,
+        "title": await page.title(),
+    }
+
+
+@mcp.tool()
+async def close_browser_page(page_name: str) -> dict[str, str]:
+    """Close the open browser page with the requested logical name."""
+    if browser_context is None:
+        raise RuntimeError("Persistent Chromium is not initialized")
+    if not isinstance(page_name, str) or not page_name.strip():
+        raise ValueError("page_name must be a non-empty string")
+
+    matching_pages = []
+    for page in browser_context.pages:
+        if (
+            not page.is_closed()
+            and await page.evaluate(f"window.{PAGE_NAME_PROPERTY} ?? null") == page_name
+        ):
+            matching_pages.append(page)
+
+    if not matching_pages:
+        raise RuntimeError(f"No open browser page is named {page_name!r}")
+    if len(matching_pages) > 1:
+        raise RuntimeError(f"Multiple browser pages are named {page_name!r}")
+
+    await matching_pages[0].close()
+    return {"closed": page_name}
+
+
+@mcp.tool()
+async def close_all_browser_pages() -> dict[str, int]:
+    """Close every open page in the persistent browser context."""
+    if browser_context is None:
+        raise RuntimeError("Persistent Chromium is not initialized")
+
+    pages = [page for page in browser_context.pages if not page.is_closed()]
+    await asyncio.gather(*(page.close() for page in pages))
+    return {"closed_count": len(pages)}
+
+
+@mcp.tool()
+async def execute_browser_script(page_name: str, script: str) -> str:
+    """Execute a synchronous Python script with a named Playwright page.
+
+    The script is a statement body, not a complete module. A synchronous
+    Playwright ``page`` is predefined and is reused or created from
+    ``page_name``. Use synchronous calls such as ``page.goto(...)`` without
+    ``await``. Text printed by the script is returned as the tool result.
+    """
+    if not isinstance(page_name, str) or not page_name.strip():
+        return "Execution Error: page_name must be a non-empty string"
+    if not isinstance(script, str) or not script.strip():
+        return "Execution Error: script must be a non-empty string"
+
+    wrapper = f"""
+import sys
+
+sys.path.insert(0, "/home/agent/workspace/.browser")
+
+from browser_helper import get_browser_page_sync
+
+page = get_browser_page_sync({page_name!r})
+script = {script!r}
+exec(compile(script, "<browser-script>", "exec"), globals(), globals())
+"""
+
+    try:
+        process = await asyncio.create_subprocess_exec(
+            "python",
+            "-",
+            stdin=asyncio.subprocess.PIPE,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+        stdout, stderr = await process.communicate(wrapper.encode())
+
+        if process.returncode != 0:
+            return (
+                f"Execution Failure (Exit Code {process.returncode}):\n"
+                f"{stderr.decode()}"
+            )
+
+        return stdout.decode()
+
+    except Exception as error:
+        return f"Internal Server Exception while executing script: {error}"
 
 
 @mcp.tool()
