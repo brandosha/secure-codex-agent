@@ -22,8 +22,8 @@ RUN mkdir -p "$PLAYWRIGHT_BROWSERS_PATH" \
     && playwright install --with-deps chromium \
     && chmod -R 755 "$PLAYWRIGHT_BROWSERS_PATH"
 
-# Copy the server entrypoint into the container
-COPY entrypoint.sh server.py ./
+# Copy the server, helper, and entrypoint into the container
+COPY entrypoint.sh server.py browser_helper.py ./
 RUN chmod +x entrypoint.sh
 
 # We use a shell script or entrypoint to boot both Chrome and our API

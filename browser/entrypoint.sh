@@ -15,4 +15,8 @@ fi
 mkdir -p /home/agent/.browser-data/profile
 chown -R agent:agent /home/agent/.browser-data
 
+mkdir -p /home/agent/workspace/.browser
+cp /app/browser_helper.py /home/agent/workspace/.browser/browser_helper.py
+chown agent:agent /home/agent/workspace/.browser/browser_helper.py
+
 exec gosu agent python server.py

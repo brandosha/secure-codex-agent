@@ -4,10 +4,7 @@ node_modules/
 .env
 
 data/
-workspace/*
-!workspace/.browser/
-workspace/.browser/*
-!workspace/.browser/browser_helper.py
+workspace/
 
 .DS_Store
 
