@@ -12,6 +12,7 @@ mcp = FastMCP("Workspace Browser Engine")
 playwright = None
 browser_context = None
 BROWSER_PROFILE_DIR = "/home/agent/.browser-data/profile"
+PAGE_NAME_PROPERTY = "__SECURE_CODEX_AGENT_PAGE_NAME__"
 
 async def wait_for_debug_port(host: str = "127.0.0.1", port: int = 9222, timeout: float = 10.0):
     deadline = asyncio.get_running_loop().time() + timeout
@@ -61,8 +62,29 @@ async def lifespan(app: FastAPI):
                 playwright = None
 
 # =====================================================================
-# THE MCP TOOL EXPOSED TO THE NODE AGENT
+# THE MCP TOOLS EXPOSED TO THE NODE AGENT
 # =====================================================================
+@mcp.tool()
+async def list_browser_pages() -> list[dict[str, str | None]]:
+    """List every open browser page with its logical name, URL, and title."""
+    if browser_context is None:
+        raise RuntimeError("Persistent Chromium is not initialized")
+
+    pages = []
+    for page in browser_context.pages:
+        if page.is_closed():
+            continue
+
+        name = await page.evaluate(f"window.{PAGE_NAME_PROPERTY} ?? null")
+        pages.append({
+            "name": name,
+            "url": page.url,
+            "title": await page.title(),
+        })
+
+    return pages
+
+
 @mcp.tool()
 async def execute_workspace_script(script_path: str) -> str:
     """
