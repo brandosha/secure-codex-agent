@@ -8,9 +8,10 @@ from playwright.async_api import async_playwright
 # Initialize FastMCP 
 mcp = FastMCP("Workspace Browser Engine")
 
-# Global references to keep Playwright and the browser alive
+# Global references to keep Playwright and the browser context alive
 playwright = None
-browser = None
+browser_context = None
+BROWSER_PROFILE_DIR = "/home/agent/.browser-data/profile"
 
 async def wait_for_debug_port(host: str = "127.0.0.1", port: int = 9222, timeout: float = 10.0):
     deadline = asyncio.get_running_loop().time() + timeout
@@ -30,12 +31,13 @@ async def wait_for_debug_port(host: str = "127.0.0.1", port: int = 9222, timeout
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    global playwright, browser
+    global playwright, browser_context
     async with mcp_app.lifespan(mcp_app):
         print("🚀 Initializing persistent headless Chromium on port 9222...", flush=True)
 
         playwright = await async_playwright().start()
-        browser = await playwright.chromium.launch(
+        browser_context = await playwright.chromium.launch_persistent_context(
+            user_data_dir=BROWSER_PROFILE_DIR,
             headless=True,
             args=[
                 "--remote-debugging-port=9222",
@@ -51,9 +53,9 @@ async def lifespan(app: FastAPI):
             yield
         finally:
             print("🛑 Shutting down background Chromium instance...", flush=True)
-            if browser:
-                await browser.close()
-                browser = None
+            if browser_context:
+                await browser_context.close()
+                browser_context = None
             if playwright:
                 await playwright.stop()
                 playwright = None

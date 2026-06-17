@@ -77,7 +77,12 @@ export class Agent extends PubSub<ThreadEvent> {
   }
 
   prompt(message: string, options?: PromptOptions) {
-    this._send({ type: "prompt", message, options: options ?? this.promptOptions });
+    options = optionsWithMcpServers(options ?? this.promptOptions, {
+      browser: {
+        url: `http://browser:8000/mcp`,
+      }
+    });
+    this._send({ type: "prompt", message, options });
   }
 
   abort() {
@@ -123,4 +128,28 @@ export function getMainAgent() {
 
   mainAgent = agent;
   return agent;
+}
+
+export function optionsWithMcpServers(options: PromptOptions, mcpServers: Record<string, any>): PromptOptions {
+  const codex = options.codex ?? {};
+  const config = codex.config ?? {};
+  const existingMcpServers = isRecord(config.mcp_servers) ? config.mcp_servers : {};
+
+  return {
+    ...options,
+    codex: {
+      ...codex,
+      config: {
+        ...config,
+        mcp_servers: {
+          ...existingMcpServers,
+          ...mcpServers,
+        },
+      },
+    },
+  };
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }

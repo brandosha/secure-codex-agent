@@ -12,4 +12,7 @@ if [ "$(id -u agent)" -ne "$TARGET_UID" ]; then
     chown -R agent:agent /home/agent
 fi
 
+mkdir -p /home/agent/.browser-data/profile
+chown -R agent:agent /home/agent/.browser-data
+
 exec gosu agent python server.py

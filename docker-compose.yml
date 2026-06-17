@@ -38,9 +38,11 @@ services:
     restart: unless-stopped
     volumes:
       - ./workspace:/home/agent/workspace
+      - browser-data:/home/agent/.browser-data
     environment:
       - HOST_UID=${HOST_UID}
 
 volumes:
   codex-home:
   tools-ssh:
+  browser-data:

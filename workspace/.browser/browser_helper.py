@@ -5,7 +5,6 @@ from playwright.async_api import async_playwright as async_p
 from browser_use.dom.service import DomService as DomService
 
 CDP_URL = "http://localhost:9222"
-SCREENSHOT_DIR = "/workspace/.browser/screenshots"
 
 class BrowserSession:
     """Wrapper to standardize session payloads."""

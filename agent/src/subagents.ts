@@ -231,36 +231,13 @@ export function serveSubagentMcp() {
   });
 }
 
-export function withSubagentMcpServer(options: PromptOptions): PromptOptions {
-  const codex = options.codex ?? {};
-  const config = codex.config ?? {};
-  const mcpServers = isRecord(config.mcp_servers) ? config.mcp_servers : {};
-
+export function subagentMcpServerConfig() {
   return {
-    ...options,
-    codex: {
-      ...codex,
-      config: {
-        ...config,
-        mcp_servers: {
-          ...mcpServers,
-          subagents: {
-            url: `http://localhost:${SUBAGENT_MCP_SERVER_PORT}/mcp/subagents`,
-            http_headers: {
-              Authorization: `Bearer ${subagentMcpAuthToken}`,
-            },
-          },
-          browser: {
-            url: `http://browser:8000/mcp`,
-          }
-        },
-      },
+    url: `http://localhost:${SUBAGENT_MCP_SERVER_PORT}/mcp/subagents`,
+    http_headers: {
+      Authorization: `Bearer ${subagentMcpAuthToken}`,
     },
   };
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 interface LiveSubagent {
