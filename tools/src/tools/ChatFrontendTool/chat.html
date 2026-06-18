@@ -279,6 +279,11 @@
       border-color: rgba(56, 189, 248, 0.2);
     }
 
+    .event.file-change {
+      background: linear-gradient(180deg, rgba(30, 64, 175, 0.2), rgba(15, 23, 42, 0.84));
+      border-color: rgba(96, 165, 250, 0.24);
+    }
+
     .event-head {
       display: flex;
       align-items: center;
@@ -410,6 +415,55 @@
       font: 13px/1.6 var(--mono);
       white-space: pre-wrap;
       word-break: break-word;
+    }
+
+    .file-change-list {
+      display: grid;
+      gap: 10px;
+      margin: 0;
+      padding: 0;
+      list-style: none;
+    }
+
+    .file-change-row {
+      display: grid;
+      grid-template-columns: auto minmax(0, 1fr);
+      align-items: start;
+      gap: 10px;
+      padding: 11px 12px;
+      border: 1px solid rgba(148, 163, 184, 0.16);
+      border-radius: 12px;
+      background: rgba(2, 6, 23, 0.36);
+    }
+
+    .file-change-kind {
+      min-width: 58px;
+      padding: 4px 7px;
+      border-radius: 7px;
+      color: #bfdbfe;
+      background: rgba(37, 99, 235, 0.2);
+      font: 700 10px/1.2 var(--mono);
+      text-align: center;
+      text-transform: uppercase;
+    }
+
+    .file-change-kind.add,
+    .file-change-kind.create {
+      color: #86efac;
+      background: rgba(22, 163, 74, 0.18);
+    }
+
+    .file-change-kind.delete,
+    .file-change-kind.remove {
+      color: #fca5a5;
+      background: rgba(220, 38, 38, 0.18);
+    }
+
+    .file-change-path {
+      min-width: 0;
+      color: #dbeafe;
+      font: 12px/1.5 var(--mono);
+      overflow-wrap: anywhere;
     }
 
     .detail-block {
@@ -746,6 +800,7 @@
           role: "user",
           title: "Prompt",
           text: typeof event.message === "string" ? event.message : "",
+          source: typeof event.from === "string" ? event.from : null,
         };
       }
 
@@ -843,6 +898,27 @@
       };
     }
 
+    function extractFileChangeEvent(event) {
+      const item = event.item;
+      if (!item || typeof item !== "object" || item.type !== "file_change") {
+        return null;
+      }
+
+      const changes = Array.isArray(item.changes)
+        ? item.changes
+          .filter((change) => change && typeof change === "object")
+          .map((change) => ({
+            path: typeof change.path === "string" ? change.path : "Unknown path",
+            kind: typeof change.kind === "string" ? change.kind : "change",
+          }))
+        : [];
+
+      return {
+        changes,
+        status: typeof item.status === "string" ? item.status : "unknown",
+      };
+    }
+
     function createMessageEvent(event, info) {
       const article = document.createElement("article");
       article.className = `event message ${info.role}`;
@@ -859,11 +935,19 @@
       const type = document.createElement("span");
       type.className = "event-type";
       type.textContent = getType(event);
+      meta.append(type);
+
+      if (info.source) {
+        const source = document.createElement("span");
+        source.className = "event-type";
+        source.textContent = `from: ${info.source}`;
+        meta.append(source);
+      }
 
       const time = document.createElement("span");
       time.textContent = formatTime(Date.now());
 
-      meta.append(type, time);
+      meta.append(time);
       head.append(strong, meta);
 
       const body = document.createElement("div");
@@ -1047,6 +1131,74 @@
       return article;
     }
 
+    function createFileChangeEvent(event, info) {
+      const article = document.createElement("article");
+      article.className = "event file-change";
+
+      const head = document.createElement("div");
+      head.className = "event-head";
+
+      const strong = document.createElement("strong");
+      strong.textContent = info.changes.length === 1 ? "File Change" : "File Changes";
+
+      const actions = document.createElement("div");
+      actions.className = "event-head-actions";
+
+      const status = document.createElement("span");
+      status.className = `event-status ${info.status}`;
+      status.textContent = info.status.replace(/_/g, " ");
+
+      const meta = document.createElement("div");
+      meta.className = "event-meta";
+
+      const type = document.createElement("span");
+      type.className = "event-type";
+      type.textContent = getType(event);
+
+      const time = document.createElement("span");
+      time.textContent = formatTime(Date.now());
+
+      meta.append(type, time);
+      actions.append(status, meta);
+      head.append(strong, actions);
+
+      const body = document.createElement("div");
+      body.className = "event-body";
+
+      const list = document.createElement("ul");
+      list.className = "file-change-list";
+
+      for (const change of info.changes) {
+        const row = document.createElement("li");
+        row.className = "file-change-row";
+
+        const kind = document.createElement("span");
+        kind.className = `file-change-kind ${change.kind.toLowerCase()}`;
+        kind.textContent = change.kind;
+
+        const path = document.createElement("span");
+        path.className = "file-change-path";
+        path.textContent = change.path;
+
+        row.append(kind, path);
+        list.append(row);
+      }
+
+      if (info.changes.length === 0) {
+        const row = document.createElement("li");
+        row.className = "file-change-row";
+        const path = document.createElement("span");
+        path.className = "file-change-path";
+        path.textContent = "No file details were provided.";
+        row.append(path);
+        list.append(row);
+      }
+
+      body.append(list);
+      article.append(head, body);
+      return article;
+    }
+
     function createJsonEvent(event) {
       const article = document.createElement("article");
       article.className = "event";
@@ -1100,10 +1252,13 @@
     function createEventNode(event) {
       const commandInfo = extractCommandEvent(event);
       const mcpToolCallInfo = extractMcpToolCallEvent(event);
+      const fileChangeInfo = extractFileChangeEvent(event);
       const info = extractMessageEvent(event);
-      return mcpToolCallInfo
-        ? createMcpToolCallEvent(event, mcpToolCallInfo)
-        : commandInfo
+      return fileChangeInfo
+        ? createFileChangeEvent(event, fileChangeInfo)
+        : mcpToolCallInfo
+          ? createMcpToolCallEvent(event, mcpToolCallInfo)
+          : commandInfo
           ? createCommandEvent(event, commandInfo)
           : info
             ? createMessageEvent(event, info)
