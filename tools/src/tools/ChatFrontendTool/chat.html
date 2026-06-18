@@ -143,6 +143,11 @@
       gap: 10px;
     }
 
+    .sidebar-actions form,
+    .sidebar-actions form button {
+      width: 100%;
+    }
+
     button {
       appearance: none;
       border: 0;
@@ -546,6 +551,9 @@
       <div class="sidebar-actions">
         <button class="secondary-button" id="reconnect-button" type="button">Reconnect</button>
         <button class="secondary-button" id="clear-button" type="button">Clear Events</button>
+        <form method="post" action="/chat/logout">
+          <button class="secondary-button logout-button" type="submit">Sign Out</button>
+        </form>
       </div>
     </aside>
 
@@ -1138,6 +1146,10 @@
         offset: String(offset),
       });
       const response = await fetch(`/chat/events?${params.toString()}`);
+      if (response.status === 401) {
+        window.location.assign("/chat/login");
+        throw new Error("Your session has expired.");
+      }
       if (!response.ok) {
         throw new Error(`Failed to fetch event history: ${response.status}`);
       }
@@ -1216,14 +1228,8 @@
       setStatus("connecting", "Connecting");
 
       try {
-        const response = await fetch("/chat/ws-token");
-        if (!response.ok) {
-          throw new Error(`Failed to fetch websocket token: ${response.status}`);
-        }
-
-        const { token } = await response.json();
         const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
-        const socketUrl = `${protocol}//${window.location.host}/chat/ws?token=${encodeURIComponent(token)}`;
+        const socketUrl = `${protocol}//${window.location.host}/chat/ws`;
 
         if (chat.ws && chat.ws.readyState !== WebSocket.CLOSED) {
           chat.ws.close();

@@ -1,4 +1,8 @@
-import { agentTools, ChatFrontendTool, GitMcpTool, NewRelicMcpTool, RemindersTool, ScheduleMcpTool, SlackMcpTool, TrelloMcpTool } from "./src/tools";
+import { agentTools, ChatFrontendTool, GitMcpTool, type LoginAuthUser, NewRelicMcpTool, RemindersTool, ScheduleMcpTool, SlackMcpTool, TrelloMcpTool } from "./src/tools";
+
+const chatLoginUsers = process.env.CHAT_LOGIN_USERS
+  ? JSON.parse(process.env.CHAT_LOGIN_USERS) as LoginAuthUser | LoginAuthUser[]
+  : undefined;
 
 
 agentTools([
@@ -8,7 +12,12 @@ agentTools([
       block: ["main", "master", "prod", "production", "dev"],
     },
   }),
-  new ChatFrontendTool(),
+  new ChatFrontendTool(chatLoginUsers ? {
+    loginAuth: {
+      users: chatLoginUsers,
+      sessionSecret: process.env.CHAT_LOGIN_SESSION_SECRET,
+    },
+  } : undefined),
   new TrelloMcpTool({
     apiKey: process.env.TRELLO_API_KEY!,
     token: process.env.TRELLO_TOKEN!,
