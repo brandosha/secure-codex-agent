@@ -110,8 +110,7 @@ export class ChatFrontendTool extends Tool {
         });
       });
 
-
-      server.use("/chat/ws", getSameOriginMiddleware());
+      // TODO: Add an explicit allowedOrigins option before enforcing WebSocket Origin checks.
       server.use("/chat/ws", apiAuthMiddleware);
       server.get("/chat/ws", upgradeWebSocket(async (c) => {
         const username = c.get("username") as string | undefined ?? null;
@@ -208,22 +207,6 @@ function getAuthMiddleware(auth: LoginAuth | null, mode: "page" | "api"): Middle
     }
 
     c.set("username", session.username);
-    await next();
-  };
-}
-
-function getSameOriginMiddleware(): MiddlewareHandler {
-  return async (c, next) => {
-    const origin = c.req.header("origin");
-    const forwardedProto = c.req.header("x-forwarded-proto")?.split(",", 1)[0]?.trim().toLowerCase();
-    const forwardedHost = c.req.header("x-forwarded-host")?.split(",", 1)[0]?.trim();
-    const requestUrl = new URL(c.req.url);
-    const expectedOrigin = `${forwardedProto ?? requestUrl.protocol.slice(0, -1)}://${forwardedHost ?? requestUrl.host}`;
-
-    if (!origin || origin !== expectedOrigin) {
-      return c.json({ error: "Forbidden" }, 403);
-    }
-
     await next();
   };
 }
