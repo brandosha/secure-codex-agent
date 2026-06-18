@@ -1,4 +1,4 @@
-"""Helpers for accessing named pages in the persistent Chromium instance.
+"""Helpers for accessing named pages across the Chromium instance.
 
 Scripts connect to Chromium over CDP and request a page by a required logical
 name. Each helper returns a Playwright Page directly; advanced callers can
@@ -73,8 +73,9 @@ def get_browser_page_sync(page_name: str) -> SyncPage:
     """Return the synchronously managed page with ``page_name``.
 
     The helper connects to the persistent Chromium instance, searches its
-    single browser context, and returns the one page carrying the requested
-    logical name. If no page matches, it creates and names a new page.
+    available browser contexts, and returns the one page carrying the requested
+    logical name. If no page matches, it creates and names a new page in the
+    normal persistent context.
 
     Raises:
         ValueError: If ``page_name`` is blank.
@@ -86,18 +87,18 @@ def get_browser_page_sync(page_name: str) -> SyncPage:
     if not browser.contexts:
         raise RuntimeError("Persistent Chromium has no browser context")
 
-    context = browser.contexts[0]
     matching_pages = [
         page
+        for context in browser.contexts
         for page in context.pages
         if not page.is_closed()
-        and page.evaluate(f"window.{PAGE_NAME_PROPERTY}") == page_name
+        and page.evaluate(f"window.{PAGE_NAME_PROPERTY} ?? null") == page_name
     ]
 
     if len(matching_pages) > 1:
         raise RuntimeError(f"Multiple browser pages are named {page_name!r}")
 
-    page = matching_pages[0] if matching_pages else context.new_page()
+    page = matching_pages[0] if matching_pages else browser.contexts[0].new_page()
     page_name_script = _build_page_name_script(page_name)
     page.add_init_script(page_name_script)
     page.evaluate(page_name_script)
@@ -108,8 +109,9 @@ async def get_browser_page(page_name: str) -> AsyncPage:
     """Return the asynchronously managed page with ``page_name``.
 
     The helper connects to the persistent Chromium instance, searches its
-    single browser context, and returns the one page carrying the requested
-    logical name. If no page matches, it creates and names a new page.
+    available browser contexts, and returns the one page carrying the requested
+    logical name. If no page matches, it creates and names a new page in the
+    normal persistent context.
 
     Raises:
         ValueError: If ``page_name`` is blank.
@@ -121,19 +123,25 @@ async def get_browser_page(page_name: str) -> AsyncPage:
     if not browser.contexts:
         raise RuntimeError("Persistent Chromium has no browser context")
 
-    context = browser.contexts[0]
     matching_pages = []
-    for page in context.pages:
-        if (
-            not page.is_closed()
-            and await page.evaluate(f"window.{PAGE_NAME_PROPERTY}") == page_name
-        ):
-            matching_pages.append(page)
+    for context in browser.contexts:
+        for page in context.pages:
+            if (
+                not page.is_closed()
+                and await page.evaluate(
+                    f"window.{PAGE_NAME_PROPERTY} ?? null"
+                ) == page_name
+            ):
+                matching_pages.append(page)
 
     if len(matching_pages) > 1:
         raise RuntimeError(f"Multiple browser pages are named {page_name!r}")
 
-    page = matching_pages[0] if matching_pages else await context.new_page()
+    page = (
+        matching_pages[0]
+        if matching_pages
+        else await browser.contexts[0].new_page()
+    )
     page_name_script = _build_page_name_script(page_name)
     await page.add_init_script(page_name_script)
     await page.evaluate(page_name_script)
