@@ -205,8 +205,8 @@ function createTrelloMcpServer(options: TrelloToolOptions, state: TrelloSharedSt
   });
 
   if (state.webhook) {
-    mcp.registerTool("add_trello_webhook", {
-      description: "Register this agent's Trello webhook for a Trello resource unless it is already registered.",
+    mcp.registerTool("watch_trello_resource", {
+      description: "Watch a Trello resource for changes so the agent can respond to relevant card activity.",
       inputSchema: z.object({
         resourceId: z.string().trim().min(1),
       }),
@@ -219,7 +219,7 @@ function createTrelloMcpServer(options: TrelloToolOptions, state: TrelloSharedSt
         );
 
         if (existing) {
-          return mcpTextResult(`Trello webhook is already registered: ${JSON.stringify(existing)}`);
+          return mcpTextResult(`Already watching Trello resource ${resourceId}: ${JSON.stringify(existing)}`);
         }
 
         const webhook = await makeTrelloApiRequest({
@@ -235,10 +235,10 @@ function createTrelloMcpServer(options: TrelloToolOptions, state: TrelloSharedSt
           clientIdentifier: TRELLO_MCP_CLIENT_IDENTIFIER,
         }) as TrelloWebhook;
 
-        return mcpTextResult(`Registered Trello webhook: ${JSON.stringify(webhook)}`);
+        return mcpTextResult(`Watching Trello resource ${resourceId}: ${JSON.stringify(webhook)}`);
       } catch (err) {
         return mcpTextResult(
-          `Failed to register Trello webhook: ${err instanceof Error ? err.message : String(err)}`,
+          `Failed to watch Trello resource ${resourceId}: ${err instanceof Error ? err.message : String(err)}`,
           true,
         );
       }
