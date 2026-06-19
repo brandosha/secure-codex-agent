@@ -4,9 +4,9 @@ import path from "path";
 import { McpServer } from "@modelcontextprotocol/server";
 import { z } from "zod";
 
-import { agent } from "../../agent";
+import type { Agent } from "../../agent";
 import { mcpTextResult } from "../../utils";
-import { McpTool } from "../base";
+import { mcpTool } from "../base";
 
 const DATA_DIRECTORY = path.resolve(import.meta.dirname, "data");
 const REMINDERS_FILE_PATH = path.join(DATA_DIRECTORY, "reminders.json");
@@ -31,13 +31,11 @@ const updateReminderSchema = z.object({
 type PersistedReminder = z.infer<typeof persistedReminderSchema>;
 type ReminderRecord = Record<string, PersistedReminder>;
 
-export class RemindersTool extends McpTool {
-  constructor() {
-    super("reminders", createRemindersMcpServer());
-  }
+export function remindersTool() {
+  return mcpTool("reminders", (agent) => createRemindersMcpServer(agent));
 }
 
-function createRemindersMcpServer() {
+function createRemindersMcpServer(agent: Agent) {
   const reminders: ReminderRecord = {};
   const stateMutex = createMutex();
   let reminderPromptQueued = false;

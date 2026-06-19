@@ -3,17 +3,15 @@ import fs from "fs/promises";
 import path from "path";
 import { z } from "zod";
 
-import { McpTool, WORKSPACE_PATH } from "./base";
+import { mcpTool, WORKSPACE_PATH } from "./base";
 import { redactSecrets } from "../utils";
 
 interface SlackMcpToolOptions {
   token: string;
 }
 
-export class SlackMcpTool extends McpTool {
-  constructor(options: SlackMcpToolOptions) {
-    super("slack", createSlackMcpServer(options));
-  }
+export function slackMcpTool(options: SlackMcpToolOptions) {
+  return mcpTool("slack", createSlackMcpServer(options));
 }
 
 function createSlackMcpServer(options: SlackMcpToolOptions) {

@@ -6,6 +6,7 @@ import { z } from "zod";
 import { db } from "./db";
 import { agentEvents } from "./db/schema";
 import { PubSub } from "./PubSub";
+import { Tool } from "./tools";
 
 export type AgentEvent = ThreadEvent | {
   type: "request.error";
@@ -146,9 +147,9 @@ export class Agent extends PubSub<AgentEvent> {
   }
 }
 
-export const agent = new Agent("ws://agent");
+export function agent(tools: Tool[]) {
 
-
+}
 
 const promptOptionsSchema = z.object({
   codex: z.record(z.string(), z.unknown()).optional(),

@@ -13,7 +13,7 @@ interface StartServerOptions {
   port: number;
   enableWebsocket: boolean;
 }
-export function startServer(server: Server, options: StartServerOptions) {
+export function startServer(server: Hono, options: StartServerOptions) {
   server.use("*", async (c) => {
     return c.text("Not found", 404);
   });

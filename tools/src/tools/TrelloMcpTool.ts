@@ -1,7 +1,7 @@
 import { McpServer } from "@modelcontextprotocol/server";
 import { z } from "zod";
 
-import { McpTool } from "./base";
+import { mcpTool } from "./base";
 import { redactSecrets } from "../utils";
 
 interface TrelloMcpToolOptions {
@@ -9,10 +9,8 @@ interface TrelloMcpToolOptions {
   token: string;
 }
 
-export class TrelloMcpTool extends McpTool {
-  constructor(options: TrelloMcpToolOptions) {
-    super("trello", createTrelloMcpServer(options));
-  }
+export function trelloMcpTool(options: TrelloMcpToolOptions) {
+  return mcpTool("trello", createTrelloMcpServer(options));
 }
 
 function createTrelloMcpServer(options: TrelloMcpToolOptions) {

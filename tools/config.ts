@@ -1,4 +1,14 @@
-import { agentTools, ChatFrontendTool, GitMcpTool, type LoginAuthUser, NewRelicMcpTool, RemindersTool, ScheduleMcpTool, SlackMcpTool, TrelloMcpTool } from "./src/tools";
+import {
+  agentTools,
+  chatFrontendTool,
+  gitMcpTool,
+  type LoginAuthUser,
+  newRelicMcpTool,
+  remindersTool,
+  scheduleMcpTool,
+  slackMcpTool,
+  trelloMcpTool,
+} from "./src/tools";
 
 const chatLoginUsers = process.env.CHAT_LOGIN_USERS
   ? JSON.parse(process.env.CHAT_LOGIN_USERS) as LoginAuthUser | LoginAuthUser[]
@@ -6,28 +16,28 @@ const chatLoginUsers = process.env.CHAT_LOGIN_USERS
 
 
 agentTools([
-  new GitMcpTool({
+  gitMcpTool({
     allowForcePush: false,
     branches: {
       block: ["main", "master", "prod", "production", "dev"],
     },
   }),
-  new ChatFrontendTool(chatLoginUsers ? {
+  chatFrontendTool(chatLoginUsers ? {
     loginAuth: {
       users: chatLoginUsers,
       sessionSecret: process.env.CHAT_LOGIN_SESSION_SECRET,
     },
   } : undefined),
-  new TrelloMcpTool({
+  trelloMcpTool({
     apiKey: process.env.TRELLO_API_KEY!,
     token: process.env.TRELLO_TOKEN!,
   }),
-  new SlackMcpTool({
+  slackMcpTool({
     token: process.env.SLACK_BOT_TOKEN!,
   }),
-  new NewRelicMcpTool({
+  newRelicMcpTool({
     apiKey: process.env.NEWRELIC_API_KEY!,
   }),
-  new ScheduleMcpTool(),
-  new RemindersTool(),
+  scheduleMcpTool(),
+  remindersTool(),
 ]);

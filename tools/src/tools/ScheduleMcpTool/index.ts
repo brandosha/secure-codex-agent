@@ -5,9 +5,9 @@ import { CronJob } from "cron";
 import { McpServer } from "@modelcontextprotocol/server";
 import { z } from "zod";
 
-import { agent } from "../../agent";
+import type { Agent } from "../../agent";
 import { mcpTextResult } from "../../utils";
-import { McpTool } from "../base";
+import { mcpTool } from "../base";
 
 const DATA_DIRECTORY = path.resolve(import.meta.dirname, "data");
 const SCHEDULE_FILE_PATH = path.join(DATA_DIRECTORY, "schedule.json");
@@ -32,13 +32,11 @@ const updateScheduleSchema = z.object({
 type PersistedSchedule = z.infer<typeof persistedScheduleSchema>;
 type ScheduleRecord = Record<string, PersistedSchedule>;
 
-export class ScheduleMcpTool extends McpTool {
-  constructor() {
-    super("schedule", createScheduleMcpServer());
-  }
+export function scheduleMcpTool() {
+  return mcpTool("schedule", (agent) => createScheduleMcpServer(agent));
 }
 
-function createScheduleMcpServer() {
+function createScheduleMcpServer(agent: Agent) {
   const jobs = new Map<string, CronJob>();
   const schedules: ScheduleRecord = {};
   const stateMutex = createMutex();
@@ -67,7 +65,7 @@ function createScheduleMcpServer() {
 
       let job: CronJob;
       try {
-        job = createJob(input.key, schedule, false);
+        job = createJob(input.key, schedule, agent, false);
       } catch (error) {
         return mcpTextResult(`Invalid cron expression for ${input.key}: ${formatError(error)}`, true);
       }
@@ -109,7 +107,7 @@ function createScheduleMcpServer() {
 
       let nextJob: CronJob;
       try {
-        nextJob = createJob(input.key, nextSchedule, false);
+        nextJob = createJob(input.key, nextSchedule, agent, false);
       } catch (error) {
         return mcpTextResult(`Invalid cron expression for ${input.key}: ${formatError(error)}`, true);
       }
@@ -183,7 +181,7 @@ function createScheduleMcpServer() {
 
     for (const [key, schedule] of Object.entries(loadedSchedules)) {
       try {
-        jobs.set(key, createJob(key, schedule));
+        jobs.set(key, createJob(key, schedule, agent));
         schedules[key] = schedule;
       } catch (error) {
         console.error(`Skipping invalid persisted schedule ${key}:`, error);
@@ -237,7 +235,7 @@ async function loadSchedulesFromDisk(): Promise<ScheduleRecord> {
   }
 }
 
-function createJob(key: string, schedule: PersistedSchedule, start = true) {
+function createJob(key: string, schedule: PersistedSchedule, agent: Agent, start = true) {
   return CronJob.from({
     cronTime: schedule.cronTime,
     onTick() {

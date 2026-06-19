@@ -3,7 +3,7 @@ import path from "path";
 import { McpServer } from "@modelcontextprotocol/server";
 import { z } from "zod";
 
-import { McpTool, WORKSPACE_PATH } from "./base";
+import { mcpTool, WORKSPACE_PATH } from "./base";
 import { execFile, mcpTextResult } from "../utils";
 
 
@@ -20,10 +20,8 @@ const defaultGitMcpToolOptions: GitMcpToolOptions = {
   allowForcePush: false,
 };
 
-export class GitMcpTool extends McpTool {
-  constructor(options: GitMcpToolOptions = defaultGitMcpToolOptions) {
-    super("git", createGitMcpServer(options));
-  }
+export function gitMcpTool(options: GitMcpToolOptions = defaultGitMcpToolOptions) {
+  return mcpTool("git", createGitMcpServer(options));
 }
 
 function createGitMcpServer(options: GitMcpToolOptions) {

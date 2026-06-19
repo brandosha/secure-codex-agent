@@ -5,9 +5,10 @@ import { randomBytes, timingSafeEqual } from "crypto";
 import { upgradeWebSocket } from "@hono/node-server";
 import { getConnInfo } from "@hono/node-server/conninfo";
 import { deleteCookie, getSignedCookie, setSignedCookie } from "hono/cookie";
+import { Hono } from "hono";
 
 import type { Agent } from "../../agent";
-import { Tool } from "../base";
+import { httpTool } from "../base";
 import type { MiddlewareHandler } from "hono";
 import z from "zod";
 
@@ -35,11 +36,11 @@ const chatEventsQuerySchema = z.object({
   offset: z.coerce.number().int().min(0).default(0),
 });
 
-export class ChatFrontendTool extends Tool {
-  constructor(options: ChatFrontendToolOptions = defaultOptions) {
-    const auth = createLoginAuth(options);
+export function chatFrontendTool(options: ChatFrontendToolOptions = defaultOptions) {
+  const auth = createLoginAuth(options);
 
-    super((server, agent) => {
+  return httpTool("/", (agent) => {
+    const server = new Hono();
       if (auth) {
         server.get("/chat/login", async (c) => {
           const session = await readAuthorizedSession(c, auth);
@@ -135,8 +136,8 @@ export class ChatFrontendTool extends Tool {
           }
         }
       }));
-    });
-  }
+    return server;
+  });
 }
 
 type LoginAuth = {

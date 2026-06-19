@@ -1,16 +1,14 @@
 import { McpServer } from "@modelcontextprotocol/server";
 import { z } from "zod";
 
-import { McpTool } from "./base";
+import { mcpTool } from "./base";
 
 interface NewRelicMcpToolOptions {
   apiKey: string;
 }
 
-export class NewRelicMcpTool extends McpTool {
-  constructor(options: NewRelicMcpToolOptions) {
-    super("newrelic", createNewRelicMcpServer(options));
-  }
+export function newRelicMcpTool(options: NewRelicMcpToolOptions) {
+  return mcpTool("newrelic", createNewRelicMcpServer(options));
 }
 
 function createNewRelicMcpServer(options: NewRelicMcpToolOptions) {
