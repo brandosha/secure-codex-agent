@@ -29,7 +29,7 @@ export type Tool = AnyTool | AnyTool[];
 
 export function simpleTool(
   mount: (agent: Agent) => void
-): Tool {
+): SimpleTool {
   return {
     type: "simple",
     mount
@@ -39,7 +39,7 @@ export function simpleTool(
 export function httpTool(
   route: string,
   mount: (agent: Agent) => Hono
-): Tool {
+): HttpTool {
   return {
     type: "http",
     route,
@@ -50,7 +50,7 @@ export function httpTool(
 export function mcpTool(
   name: string,
   mcp: McpServer | ((agent: Agent) => McpServer)
-): Tool {
+): McpTool {
   return {
     type: "mcp",
     name,
@@ -66,7 +66,7 @@ export function mcpTool(
 export function webhookTool(
   name: string,
   handler: (c: Context, agent: Agent) => Promise<Response>
-): Tool {
+): HttpTool {
   return httpTool(`/webhook/${name}`, (agent) => {
     const app = new Hono();
     app.all(`/`, (c) => handler(c, agent));

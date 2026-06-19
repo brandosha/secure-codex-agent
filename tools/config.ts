@@ -7,7 +7,7 @@ import {
   remindersTool,
   scheduleMcpTool,
   slackMcpTool,
-  trelloMcpTool,
+  trelloTool,
 } from "./src/tools";
 
 const chatLoginUsers = process.env.CHAT_LOGIN_USERS
@@ -28,9 +28,11 @@ agentTools([
       sessionSecret: process.env.CHAT_LOGIN_SESSION_SECRET,
     },
   } : undefined),
-  trelloMcpTool({
+  trelloTool({
     apiKey: process.env.TRELLO_API_KEY!,
     token: process.env.TRELLO_TOKEN!,
+    secret: process.env.TRELLO_WEBHOOK_SECRET,
+    originHostname: process.env.TRELLO_WEBHOOK_HOSTNAME,
   }),
   slackMcpTool({
     token: process.env.SLACK_BOT_TOKEN!,

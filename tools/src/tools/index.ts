@@ -6,4 +6,4 @@ export * from "./newRelicMcpTool";
 export * from "./remindersTool";
 export * from "./scheduleMcpTool";
 export * from "./slackMcpTool";
-export * from "./trelloMcpTool";
+export * from "./trelloTool";
