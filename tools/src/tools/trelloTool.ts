@@ -1,4 +1,6 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
+import fs from "node:fs/promises";
+import path from "node:path";
 
 import { McpServer } from "@modelcontextprotocol/server";
 import type { Context } from "hono";
@@ -6,7 +8,7 @@ import { z } from "zod";
 
 import type { Agent } from "../agent";
 import type { AnyTool } from "./base";
-import { mcpTool, webhookTool } from "./base";
+import { mcpTool, webhookTool, WORKSPACE_PATH } from "./base";
 import { mcpTextResult, redactSecrets } from "../utils";
 
 const TRELLO_MCP_CLIENT_IDENTIFIER = "TrelloMcpTool";
@@ -196,6 +198,54 @@ function createTrelloMcpServer(options: TrelloToolOptions, state: TrelloSharedSt
         content: [{
           type: "text",
           text: "Failed to create Trello card",
+        }, {
+          type: "text",
+          text: `Error: ${err instanceof Error ? err.message : String(err)}`,
+        }],
+      };
+    }
+  });
+
+  mcp.registerTool("trello_upload_attachment", {
+    description: "Upload a file from the workspace directory to a Trello card assigned to the current Trello user.",
+    inputSchema: z.object({
+      card_id: z.string().trim().min(1).describe("ID of the Trello card to attach the file to."),
+      file_path: z.string().describe("Path to a file inside the workspace directory. Relative paths are resolved from the workspace root."),
+      name: z.string().optional().describe("Optional display name for the attachment."),
+      mime_type: z.string().optional().describe("Optional MIME type for the attachment."),
+      set_cover: z.boolean().optional().describe("Whether Trello should use this attachment as the card cover."),
+    }),
+  }, async (input) => {
+    try {
+      const response = await uploadTrelloAttachmentFromWorkspace({
+        apiKey: options.apiKey,
+        token: options.token,
+        cardId: input.card_id,
+        filePath: input.file_path,
+        name: input.name,
+        mimeType: input.mime_type,
+        setCover: input.set_cover,
+        currentMemberIdPromise: state.currentMemberIdPromise,
+        clientIdentifier: TRELLO_MCP_CLIENT_IDENTIFIER,
+      });
+
+      return {
+        isError: false,
+        content: [{
+          type: "resource",
+          resource: {
+            uri: "trello-api-response.json",
+            mimeType: "application/json",
+            text: JSON.stringify(response),
+          },
+        }],
+      };
+    } catch (err) {
+      return {
+        isError: true,
+        content: [{
+          type: "text",
+          text: "Failed to upload Trello attachment",
         }, {
           type: "text",
           text: `Error: ${err instanceof Error ? err.message : String(err)}`,
@@ -429,6 +479,19 @@ interface TrelloCardMembersResponse {
   idMembers?: string[];
 }
 
+interface TrelloUploadAttachmentRequest {
+  apiKey: string;
+  token: string;
+  cardId: string;
+  filePath: string;
+  currentMemberIdPromise: Promise<string>;
+  name?: string;
+  mimeType?: string;
+  setCover?: boolean;
+  clientIdentifier?: string;
+  workspacePath?: string;
+}
+
 interface TrelloMemberResponse {
   id?: string;
 }
@@ -439,6 +502,13 @@ export class TrelloAuthorizationError extends Error {
   constructor(message: string) {
     super(message);
     this.name = "TrelloAuthorizationError";
+  }
+}
+
+export class TrelloAttachmentError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "TrelloAttachmentError";
   }
 }
 
@@ -589,6 +659,102 @@ function normalizeMemberIds(idMembers: unknown) {
   }
 
   return [];
+}
+
+export function resolveTrelloWorkspaceFilePath(filePath: string, workspacePath = WORKSPACE_PATH) {
+  const workspaceRoot = path.resolve(workspacePath);
+  const resolvedPath = path.resolve(workspaceRoot, filePath);
+  const relativePath = path.relative(workspaceRoot, resolvedPath);
+
+  if (relativePath.startsWith("..") || path.isAbsolute(relativePath)) {
+    throw new TrelloAttachmentError("File path must stay inside the workspace directory.");
+  }
+
+  return resolvedPath;
+}
+
+export async function uploadTrelloAttachmentFromWorkspace(request: TrelloUploadAttachmentRequest) {
+  const encodedCardId = encodeURIComponent(request.cardId);
+  const resolvedPath = resolveTrelloWorkspaceFilePath(
+    request.filePath,
+    request.workspacePath ?? WORKSPACE_PATH,
+  );
+  const stat = await fs.stat(resolvedPath).catch((error) => {
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    throw new TrelloAttachmentError(`Unable to read workspace file metadata: ${errorMessage}`);
+  });
+
+  if (!stat.isFile()) {
+    throw new TrelloAttachmentError("Trello attachment path must point to a file.");
+  }
+
+  if (stat.size === 0) {
+    throw new TrelloAttachmentError("Trello attachment path must point to a non-empty file.");
+  }
+
+  await authorizeTrelloRequest({
+    apiKey: request.apiKey,
+    token: request.token,
+    method: "POST",
+    endpoint: `/cards/${encodedCardId}/attachments`,
+    currentMemberIdPromise: request.currentMemberIdPromise,
+  });
+
+  const fileBytes = await fs.readFile(resolvedPath).catch((error) => {
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    throw new TrelloAttachmentError(`Unable to read workspace file: ${errorMessage}`);
+  });
+  const filename = path.basename(resolvedPath);
+  const form = new FormData();
+  form.append("file", new Blob([fileBytes], {
+    type: request.mimeType ?? "application/octet-stream",
+  }), filename);
+
+  if (request.name !== undefined) {
+    form.append("name", request.name);
+  }
+  if (request.mimeType !== undefined) {
+    form.append("mimeType", request.mimeType);
+  }
+  if (request.setCover !== undefined) {
+    form.append("setCover", String(request.setCover));
+  }
+
+  const endpoint = normalizeTrelloEndpoint(`/cards/${encodedCardId}/attachments`);
+  const url = new URL(endpoint, "https://api.trello.com");
+  const response = await fetch(url, {
+    method: "POST",
+    headers: {
+      "Authorization": `OAuth oauth_consumer_key="${request.apiKey}", oauth_token="${request.token}"`,
+      "X-Trello-Client-Identifier": request.clientIdentifier ?? TRELLO_CLIENT_IDENTIFIER,
+    },
+    body: form,
+  }).catch((error) => {
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    throw new TrelloAttachmentError(redactSecrets(
+      `Error uploading Trello attachment: ${errorMessage}`,
+      [request.apiKey, request.token],
+    ));
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new TrelloAttachmentError(redactSecrets(
+      `Trello attachment upload failed: ${response.status} ${response.statusText}\n${errorText}`,
+      [request.apiKey, request.token],
+    ));
+  }
+
+  const responseText = await response.text();
+  if (!responseText.trim()) {
+    return null;
+  }
+
+  try {
+    return JSON.parse(responseText);
+  } catch {
+    return responseText;
+  }
 }
 
 export async function makeTrelloApiRequest(request: TrelloApiRequest) {
