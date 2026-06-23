@@ -61,11 +61,18 @@ type StartInput = z.infer<typeof startInputSchema>;
 type PromptInput = z.infer<typeof promptInputSchema>;
 type QueryEventsInput = z.infer<typeof queryEventsInputSchema>;
 type WaitInput = z.infer<typeof waitInputSchema>;
+type SubagentPromptOptionsBuilder = (id: string, options?: PromptOptions) => PromptOptions;
+
+let subagentPromptOptionsBuilder: SubagentPromptOptionsBuilder = (_id, options = {}) => options;
+
+export function setSubagentPromptOptionsBuilder(builder: SubagentPromptOptionsBuilder) {
+  subagentPromptOptionsBuilder = builder;
+}
 
 export function buildSubagentMcpServer() {
   const mcp = new McpServer({
     name: "Subagent MCP Tool",
-    description: "An MCP server for managing subagents. NOTE: Subagents run without access to external mcp servers.",
+    description: "An MCP server for managing subagents.",
     version: "0.0.1",
   }, {
     capabilities: {
@@ -285,7 +292,7 @@ export class SubagentManager {
       type: "input.prompt",
       prompt: input.prompt,
     });
-    agent.prompt(input.prompt);
+    agent.prompt(input.prompt, subagentPromptOptionsBuilder(input.id));
 
     return this._summary(input.id);
   }
@@ -393,7 +400,7 @@ export class SubagentManager {
       type: "input.prompt",
       prompt,
     });
-    agent.prompt(prompt, options);
+    agent.prompt(prompt, subagentPromptOptionsBuilder(id, options));
   }
 
   async abortAgent(id: string) {

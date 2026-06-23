@@ -6,14 +6,18 @@ import { WSContext } from "hono/ws";
 import { WebSocketServer } from "ws";
 import { z } from "zod";
 
-import { AgentRegistry } from "./agentRegistry";
-import { PromptOptions, promptOptionsSchema } from "./agent";
+import { AgentRegistry, type McpServerRegistryEntry } from "./agentRegistry";
 import { serveSubagentMcp } from "./subagents";
 
 serveSubagentMcp();
 
 const agentRegistry = new AgentRegistry();
 const app = new Hono();
+
+const mcpServerRegistryEntrySchema = z.object({
+  url: z.string(),
+  http_headers: z.record(z.string(), z.string()).optional(),
+}) satisfies z.ZodType<McpServerRegistryEntry>;
 
 const websocketRequestSchema = z.discriminatedUnion("type", [
   z.object({
@@ -26,9 +30,8 @@ const websocketRequestSchema = z.discriminatedUnion("type", [
     message: z.string(),
   }),
   z.object({
-    type: z.literal("config"),
-    agentId: z.string().optional(),
-    config: promptOptionsSchema,
+    type: z.literal("mcp_registry"),
+    mcpServers: z.record(z.string(), mcpServerRegistryEntrySchema),
   })
 ]);
 
@@ -57,7 +60,6 @@ app.get("/", upgradeWebSocket(async (c) => {
 
   let unsubscribe = () => {};
   const unsubscribesByAgent = new Map<string | undefined, () => void>();
-  const promptOptionsByAgent = new Map<string | undefined, PromptOptions>();
 
   const ensureSubscribed = async (agentId?: string) => {
     if (unsubscribesByAgent.has(agentId)) {
@@ -98,21 +100,21 @@ app.get("/", upgradeWebSocket(async (c) => {
 
         const data = parsedRequest.data;
         try {
-          await ensureSubscribed(data.agentId);
-          if (data.type === "abort") {
+          if (data.type === "mcp_registry") {
+            agentRegistry.setExternalMcpRegistry(data.mcpServers);
+          } else if (data.type === "abort") {
+            await ensureSubscribed(data.agentId);
             await agentRegistry.abort(data.agentId);
           } else if (data.type === "prompt") {
-            const promptOptions = promptOptionsByAgent.get(data.agentId) ?? {};
-            await agentRegistry.prompt(data.agentId, data.message, promptOptions);
-          } else if (data.type === "config") {
-            promptOptionsByAgent.set(data.agentId, data.config);
+            await ensureSubscribed(data.agentId);
+            await agentRegistry.prompt(data.agentId, data.message);
           }
         } catch (err) {
           sendEvent(ws, {
             type: "request.error",
             message: err instanceof Error ? err.message : String(err),
             issues: [],
-          }, data.agentId);
+          }, "agentId" in data ? data.agentId : undefined);
         }
       } catch (err) {
         console.error("Error handling message:", err);

@@ -28,6 +28,13 @@ export interface PersistedAgentEvent {
   rawJson: AgentEvent;
 }
 
+export interface McpServerRegistryEntry {
+  url: string;
+  http_headers?: Record<string, string>;
+}
+
+export type McpServerRegistry = Record<string, McpServerRegistryEntry>;
+
 const SUBAGENT_ID_HEADER = "X-Subagent-Id";
 const AGENT_ID_PATTERN = /^[a-zA-Z0-9_-]{1,63}$/;
 
@@ -36,10 +43,15 @@ type AgentId = string | undefined;
 export class AgentRouter {
   private _agents = new Map<AgentId, Agent>();
   private _connection: AgentConnection;
+  private _mcpRegistry?: McpServerRegistry;
 
   constructor(address: string) {
     this._connection = new AgentConnection(address, (agentId, event) => {
       this.agent(agentId).recordAndPublish(event);
+    }, () => {
+      if (this._mcpRegistry) {
+        this._connection.send({ type: "mcp_registry", mcpServers: this._mcpRegistry });
+      }
     });
   }
 
@@ -56,6 +68,11 @@ export class AgentRouter {
     }
     return agent;
   }
+
+  configureMcpRegistry(mcpServers: McpServerRegistry) {
+    this._mcpRegistry = mcpServers;
+    this._connection.send({ type: "mcp_registry", mcpServers });
+  }
 }
 
 export class Agent extends PubSub<AgentEvent> {
@@ -66,10 +83,6 @@ export class Agent extends PubSub<AgentEvent> {
     super();
     this.id = id;
     this._connection = connection;
-  }
-
-  config(options: PromptOptions) {
-    this._connection.send({ type: "config", agentId: this.id, config: options });
   }
 
   prompt(message: string, from: string) {
@@ -102,7 +115,11 @@ class AgentConnection {
   private _reconnectTimer?: NodeJS.Timeout;
   private _ws?: WebSocket;
 
-  constructor(address: string, private _onEvent: (agentId: string | undefined, event: AgentEvent) => void) {
+  constructor(
+    address: string,
+    private _onEvent: (agentId: string | undefined, event: AgentEvent) => void,
+    private _onOpen: () => void,
+  ) {
     this._connect(address);
   }
 
@@ -116,6 +133,7 @@ class AgentConnection {
         resolve(ws);
       }
       this._readyWaiters.clear();
+      this._onOpen();
     });
 
     ws.on("message", (data) => {
@@ -208,12 +226,10 @@ export function agent(tools: Tool[]) {
 
 }
 
-const promptOptionsSchema = z.object({
-  codex: z.record(z.string(), z.unknown()).optional(),
-  thread: z.record(z.string(), z.unknown()).optional(),
-});
-
-type PromptOptions = z.infer<typeof promptOptionsSchema>;
+const mcpServerRegistryEntrySchema = z.object({
+  url: z.string(),
+  http_headers: z.record(z.string(), z.string()).optional(),
+}) satisfies z.ZodType<McpServerRegistryEntry>;
 
 const websocketRequestSchema = z.discriminatedUnion("type", [
   z.object({
@@ -226,9 +242,8 @@ const websocketRequestSchema = z.discriminatedUnion("type", [
     message: z.string(),
   }),
   z.object({
-    type: z.literal("config"),
-    agentId: z.string().optional(),
-    config: promptOptionsSchema,
+    type: z.literal("mcp_registry"),
+    mcpServers: z.record(z.string(), mcpServerRegistryEntrySchema),
   })
 ]);
 

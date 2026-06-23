@@ -1,7 +1,7 @@
 import { McpServer, WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/server";
 import { Context, Hono } from "hono";
 
-import { Agent, AgentRouter } from "../agent";
+import { Agent, AgentRouter, type McpServerRegistry } from "../agent";
 import { startServer } from "../server";
 
 export const WORKSPACE_PATH = "/home/agent/workspace";
@@ -76,7 +76,7 @@ export function webhookTool(
 
 export function agentTools(tools: Tool[]) {
   const agentRouter = new AgentRouter("ws://agent");
-  const mcpServersConfig: Record<string, unknown> = {}
+  const mcpServersConfig: McpServerRegistry = {}
   const publicApp = new Hono();
   const mcpApp = new Hono();
   const mcpAuthToken = crypto.randomUUID();
@@ -89,13 +89,7 @@ export function agentTools(tools: Tool[]) {
     mcpAuthToken,
   });
 
-  agentRouter.agent().config({
-    codex: {
-      config: {
-        mcp_servers: mcpServersConfig,
-      },
-    },
-  });
+  agentRouter.configureMcpRegistry(mcpServersConfig);
 
   startServer(publicApp, {
     port: 80,
@@ -109,7 +103,7 @@ export function agentTools(tools: Tool[]) {
 
 interface RegisterAgentToolsContext {
   agentRouter: AgentRouter;
-  mcpServersConfig: Record<string, unknown>;
+  mcpServersConfig: McpServerRegistry;
   publicApp: Hono;
   mcpApp: Hono;
   mcpAuthToken: string;
