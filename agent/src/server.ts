@@ -17,13 +17,16 @@ const app = new Hono();
 const websocketRequestSchema = z.discriminatedUnion("type", [
   z.object({
     type: z.literal("abort"),
+    agentId: z.string().optional(),
   }),
   z.object({
     type: z.literal("prompt"),
+    agentId: z.string().optional(),
     message: z.string(),
   }),
   z.object({
     type: z.literal("config"),
+    agentId: z.string().optional(),
     config: promptOptionsSchema,
   })
 ]);
@@ -34,8 +37,15 @@ type WebsocketEvent = ThreadEvent | {
   issues: any[];
 }
 
-function sendEvent(ws: WSContext, event: WebsocketEvent) {
-  ws.send(JSON.stringify(event));
+function sendEvent(ws: WSContext, event: WebsocketEvent, agentId?: string) {
+  ws.send(JSON.stringify({ agentId, event }));
+}
+
+function requireMainAgent(agentId: string | undefined) {
+  if (agentId) {
+    throw new Error(`Agent routing for subagent '${agentId}' is not available yet.`);
+  }
+  return agent;
 }
 
 // Block any local server access
@@ -52,7 +62,7 @@ app.use("*", async (c, next) => {
 app.get("/", upgradeWebSocket(async (c) => {
 
   let unsubscribe = () => {};
-  let promptOptions: PromptOptions = {};
+  const promptOptionsByAgent = new Map<string, PromptOptions>();
 
   return {
     onOpen: async (event, ws) => {
@@ -68,19 +78,30 @@ app.get("/", upgradeWebSocket(async (c) => {
             type: "request.error",
             message: "Invalid websocket request",
             issues: parsedRequest.error.issues,
-          });
+          }, undefined);
           return;
         }
 
         const data = parsedRequest.data;
-        if (data.type === "abort") {
-          agent.abort();
-        } else if (data.type === "prompt") {
-          agent.prompt(data.message, optionsWithMcpServers(promptOptions, {
-            subagents: subagentMcpServerConfig(),
-          }));
-        } else if (data.type === "config") {
-          promptOptions = data.config;
+        try {
+          const targetAgent = requireMainAgent(data.agentId);
+          const agentKey = data.agentId ?? "";
+          if (data.type === "abort") {
+            targetAgent.abort();
+          } else if (data.type === "prompt") {
+            const promptOptions = promptOptionsByAgent.get(agentKey) ?? {};
+            targetAgent.prompt(data.message, optionsWithMcpServers(promptOptions, {
+              subagents: subagentMcpServerConfig(),
+            }));
+          } else if (data.type === "config") {
+            promptOptionsByAgent.set(agentKey, data.config);
+          }
+        } catch (err) {
+          sendEvent(ws, {
+            type: "request.error",
+            message: err instanceof Error ? err.message : String(err),
+            issues: [],
+          }, data.agentId);
         }
       } catch (err) {
         console.error("Error handling message:", err);

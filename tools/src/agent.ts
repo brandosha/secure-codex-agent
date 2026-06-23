@@ -27,13 +27,72 @@ export interface PersistedAgentEvent {
   rawJson: AgentEvent;
 }
 
+export class AgentRouter {
+  private _agents = new Map<string, Agent>();
+  private _connection: AgentConnection;
+
+  constructor(address: string) {
+    this._connection = new AgentConnection(address, (agentId, event) => {
+      this.agent(agentId).recordAndPublish(event);
+    });
+  }
+
+  agent(id?: string) {
+    const key = agentKey(id);
+    let agent = this._agents.get(key);
+    if (!agent) {
+      agent = new Agent(id, this._connection);
+      this._agents.set(key, agent);
+    }
+    return agent;
+  }
+}
+
 export class Agent extends PubSub<AgentEvent> {
+  readonly id?: string;
+  private _connection: AgentConnection;
+
+  constructor(id: string | undefined, connection: AgentConnection) {
+    super();
+    this.id = id;
+    this._connection = connection;
+  }
+
+  config(options: PromptOptions) {
+    this._connection.send({ type: "config", agentId: this.id, config: options });
+  }
+
+  prompt(message: string, from: string) {
+    const event: AgentEvent = { type: "input.prompt", message, from };
+    if (!this.recordAndPublish(event)) {
+      return;
+    }
+    this._connection.send({ type: "prompt", agentId: this.id, message });
+  }
+
+  abort(from: string) {
+    const event: AgentEvent = { type: "input.abort", from };
+    if (!this.recordAndPublish(event)) {
+      return;
+    }
+    this._connection.send({ type: "abort", agentId: this.id });
+  }
+
+  listEvents(limit: number, offset = 0): PersistedAgentEvent[] {
+    return this._connection.listEvents(limit, offset);
+  }
+
+  recordAndPublish(event: AgentEvent) {
+    return this._connection.recordAndPublish(event, this);
+  }
+}
+
+class AgentConnection {
   private _readyWaiters = new Set<(ws: WebSocket) => void>();
   private _reconnectTimer?: NodeJS.Timeout;
   private _ws?: WebSocket;
 
-  constructor(address: string) {
-    super();
+  constructor(address: string, private _onEvent: (agentId: string | undefined, event: AgentEvent) => void) {
     this._connect(address);
   }
 
@@ -51,8 +110,8 @@ export class Agent extends PubSub<AgentEvent> {
 
     ws.on("message", (data) => {
       try {
-        const message = JSON.parse(data.toString()) as AgentEvent;
-        this.#recordAndPublish(message);
+        const message = websocketEventSchema.parse(JSON.parse(data.toString()));
+        this._onEvent(message.agentId, message.event);
       } catch (err) {
         console.error("Error parsing message:", err, data);
       }
@@ -75,7 +134,7 @@ export class Agent extends PubSub<AgentEvent> {
     });
   }
 
-  private async _send(req: WebSocketRequest) {
+  async send(req: WebSocketRequest) {
     const ws = await this._waitUntilReady();
     ws.send(JSON.stringify(req));
   }
@@ -88,26 +147,6 @@ export class Agent extends PubSub<AgentEvent> {
     return new Promise<WebSocket>((resolve) => {
       this._readyWaiters.add(resolve);
     });
-  }
-
-  config(options: PromptOptions) {
-    this._send({ type: "config", config: options });
-  }
-
-  prompt(message: string, from: string) {
-    const event: AgentEvent = { type: "input.prompt", message, from };
-    if (!this.#recordAndPublish(event)) {
-      return;
-    }
-    this._send({ type: "prompt", message });
-  }
-
-  abort(from: string) {
-    const event: AgentEvent = { type: "input.abort", from };
-    if (!this.#recordAndPublish(event)) {
-      return;
-    }
-    this._send({ type: "abort" });
   }
 
   listEvents(limit: number, offset = 0): PersistedAgentEvent[] {
@@ -132,19 +171,23 @@ export class Agent extends PubSub<AgentEvent> {
       }));
   }
 
-  #recordAndPublish(event: AgentEvent) {
+  recordAndPublish(event: AgentEvent, agent: Agent) {
     try {
       db.insert(agentEvents).values({
         eventType: event.type,
         rawJson: JSON.stringify(event),
       }).run();
-      this.publish(event);
+      agent.publish(event);
       return true;
     } catch (err) {
       console.error("Error persisting agent event:", err, event);
       return false;
     }
   }
+}
+
+function agentKey(id?: string) {
+  return id ?? "__main__";
 }
 
 export function agent(tools: Tool[]) {
@@ -161,15 +204,23 @@ type PromptOptions = z.infer<typeof promptOptionsSchema>;
 const websocketRequestSchema = z.discriminatedUnion("type", [
   z.object({
     type: z.literal("abort"),
+    agentId: z.string().optional(),
   }),
   z.object({
     type: z.literal("prompt"),
+    agentId: z.string().optional(),
     message: z.string(),
   }),
   z.object({
     type: z.literal("config"),
+    agentId: z.string().optional(),
     config: promptOptionsSchema,
   })
 ]);
 
 export type WebSocketRequest = z.infer<typeof websocketRequestSchema>;
+
+const websocketEventSchema = z.object({
+  agentId: z.string().optional(),
+  event: z.custom<AgentEvent>(),
+});
