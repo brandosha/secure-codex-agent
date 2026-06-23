@@ -56,19 +56,18 @@ app.use("*", async (c, next) => {
 app.get("/", upgradeWebSocket(async (c) => {
 
   let unsubscribe = () => {};
-  const unsubscribesByAgent = new Map<string, () => void>();
-  const promptOptionsByAgent = new Map<string, PromptOptions>();
+  const unsubscribesByAgent = new Map<string | undefined, () => void>();
+  const promptOptionsByAgent = new Map<string | undefined, PromptOptions>();
 
   const ensureSubscribed = async (agentId?: string) => {
-    const key = agentKey(agentId);
-    if (unsubscribesByAgent.has(key)) {
+    if (unsubscribesByAgent.has(agentId)) {
       return;
     }
 
     const agentUnsubscribe = await agentRegistry.subscribe(agentId, (event) => {
       sendEvent(wsRef, event, agentId);
     });
-    unsubscribesByAgent.set(key, agentUnsubscribe);
+    unsubscribesByAgent.set(agentId, agentUnsubscribe);
   };
 
   let wsRef: WSContext;
@@ -100,14 +99,13 @@ app.get("/", upgradeWebSocket(async (c) => {
         const data = parsedRequest.data;
         try {
           await ensureSubscribed(data.agentId);
-          const key = agentKey(data.agentId);
           if (data.type === "abort") {
             await agentRegistry.abort(data.agentId);
           } else if (data.type === "prompt") {
-            const promptOptions = promptOptionsByAgent.get(key) ?? {};
+            const promptOptions = promptOptionsByAgent.get(data.agentId) ?? {};
             await agentRegistry.prompt(data.agentId, data.message, promptOptions);
           } else if (data.type === "config") {
-            promptOptionsByAgent.set(key, data.config);
+            promptOptionsByAgent.set(data.agentId, data.config);
           }
         } catch (err) {
           sendEvent(ws, {
@@ -125,10 +123,6 @@ app.get("/", upgradeWebSocket(async (c) => {
     }
   };
 }));
-
-function agentKey(agentId?: string) {
-  return agentId ?? "";
-}
 
 app.use("*", async (c) => {
   return c.text("Not found", 404);
