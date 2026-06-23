@@ -75,7 +75,7 @@ export function buildSubagentMcpServer() {
     },
   });
 
-  const subagentManager = new SubagentManager(mcp);
+  const subagentManager = getSubagentManager(mcp);
 
   mcp.registerTool("start", {
     description: "Start an async Codex subagent. Returns the status resource URI for polling and notifications.",
@@ -259,12 +259,16 @@ interface WaitResult {
   latestAssistantMessage?: string;
 }
 
-class SubagentManager {
+export class SubagentManager {
   private _liveSubagents = new Map<string, LiveSubagent>();
-  private _mcp: McpServer;
+  private _mcp?: McpServer;
   private _waiters = new Map<string, Set<Waiter>>();
 
-  constructor(server: McpServer) {
+  constructor(server?: McpServer) {
+    this._mcp = server;
+  }
+
+  setMcpServer(server: McpServer) {
     this._mcp = server;
   }
 
@@ -275,7 +279,7 @@ class SubagentManager {
     }
 
     await createSubagent({ id: input.id, name: input.name });
-    this._mcp.sendResourceListChanged();
+    this._mcp?.sendResourceListChanged();
     const agent = await this._getOrCreateLiveAgent(input.id);
     await this._recordInputEvent(input.id, {
       type: "input.prompt",
@@ -288,31 +292,19 @@ class SubagentManager {
 
   async prompt(input: PromptInput) {
     await this._requireSubagent(input.id);
-    const agent = await this._getOrCreateLiveAgent(input.id);
-    await this._recordInputEvent(input.id, {
-      type: "input.prompt",
-      prompt: input.prompt,
-    });
-    agent.prompt(input.prompt);
+    await this.promptAgent(input.id, input.prompt);
     return this._summary(input.id);
   }
 
   async abort(input: SubagentIdInput) {
-    await this._requireSubagent(input.id);
-    const liveSubagent = this._liveSubagents.get(input.id);
-    if (!liveSubagent) {
-      throw new Error(`Subagent '${input.id}' is not live in this server process.`);
-    }
-
-    await this._recordInputEvent(input.id, { type: "input.abort" });
-    liveSubagent.agent.abort();
+    await this.abortAgent(input.id);
     return this._summary(input.id);
   }
 
   async archive(input: SubagentIdInput) {
     await this._requireSubagent(input.id);
     await archiveSubagent(input.id);
-    this._mcp.sendResourceListChanged();
+    this._mcp?.sendResourceListChanged();
     return this._summary(input.id);
   }
 
@@ -390,6 +382,31 @@ class SubagentManager {
     };
   }
 
+  async agent(id: string) {
+    await this._requireActiveSubagent(id);
+    return this._getOrCreateLiveAgent(id);
+  }
+
+  async promptAgent(id: string, prompt: string, options?: PromptOptions) {
+    const agent = await this.agent(id);
+    await this._recordInputEvent(id, {
+      type: "input.prompt",
+      prompt,
+    });
+    agent.prompt(prompt, options);
+  }
+
+  async abortAgent(id: string) {
+    await this._requireActiveSubagent(id);
+    const liveSubagent = this._liveSubagents.get(id);
+    if (!liveSubagent) {
+      throw new Error(`Subagent '${id}' is not live in this server process.`);
+    }
+
+    await this._recordInputEvent(id, { type: "input.abort" });
+    liveSubagent.agent.abort();
+  }
+
   private async _getOrCreateLiveAgent(id: string) {
     const liveSubagent = this._liveSubagents.get(id);
     if (liveSubagent) {
@@ -447,7 +464,7 @@ class SubagentManager {
   }
 
   private async _notifyStatusUpdated(id: string) {
-    if (!this._mcp.isConnected()) {
+    if (!this._mcp?.isConnected()) {
       return;
     }
 
@@ -509,6 +526,25 @@ class SubagentManager {
     }
     return subagent;
   }
+
+  private async _requireActiveSubagent(id: string): Promise<Subagent> {
+    const subagent = await this._requireSubagent(id);
+    if (subagent.archived) {
+      throw new ProtocolError(ProtocolErrorCode.ResourceNotFound, `Subagent '${id}' is archived.`);
+    }
+    return subagent;
+  }
+}
+
+let subagentManager: SubagentManager | undefined;
+
+export function getSubagentManager(mcp?: McpServer) {
+  if (!subagentManager) {
+    subagentManager = new SubagentManager(mcp);
+  } else if (mcp) {
+    subagentManager.setMcpServer(mcp);
+  }
+  return subagentManager;
 }
 
 function getTemplateVariable(variables: Record<string, unknown>, key: string) {

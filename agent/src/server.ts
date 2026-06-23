@@ -6,12 +6,13 @@ import { WSContext } from "hono/ws";
 import { WebSocketServer } from "ws";
 import { z } from "zod";
 
-import { getMainAgent, optionsWithMcpServers, PromptOptions, promptOptionsSchema } from "./agent";
-import { serveSubagentMcp, subagentMcpServerConfig } from "./subagents";
+import { AgentRegistry } from "./agentRegistry";
+import { PromptOptions, promptOptionsSchema } from "./agent";
+import { serveSubagentMcp } from "./subagents";
 
 serveSubagentMcp();
 
-const agent = getMainAgent();
+const agentRegistry = new AgentRegistry();
 const app = new Hono();
 
 const websocketRequestSchema = z.discriminatedUnion("type", [
@@ -41,13 +42,6 @@ function sendEvent(ws: WSContext, event: WebsocketEvent, agentId?: string) {
   ws.send(JSON.stringify({ agentId, event }));
 }
 
-function requireMainAgent(agentId: string | undefined) {
-  if (agentId) {
-    throw new Error(`Agent routing for subagent '${agentId}' is not available yet.`);
-  }
-  return agent;
-}
-
 // Block any local server access
 app.use("*", async (c, next) => {
   const connInfo = getConnInfo(c);
@@ -62,15 +56,36 @@ app.use("*", async (c, next) => {
 app.get("/", upgradeWebSocket(async (c) => {
 
   let unsubscribe = () => {};
+  const unsubscribesByAgent = new Map<string, () => void>();
   const promptOptionsByAgent = new Map<string, PromptOptions>();
+
+  const ensureSubscribed = async (agentId?: string) => {
+    const key = agentKey(agentId);
+    if (unsubscribesByAgent.has(key)) {
+      return;
+    }
+
+    const agentUnsubscribe = await agentRegistry.subscribe(agentId, (event) => {
+      sendEvent(wsRef, event, agentId);
+    });
+    unsubscribesByAgent.set(key, agentUnsubscribe);
+  };
+
+  let wsRef: WSContext;
 
   return {
     onOpen: async (event, ws) => {
-      unsubscribe = agent.subscribe((event) => {
-        sendEvent(ws, event);
-      });
+      wsRef = ws;
+      await ensureSubscribed(undefined);
+      unsubscribe = () => {
+        for (const agentUnsubscribe of unsubscribesByAgent.values()) {
+          agentUnsubscribe();
+        }
+        unsubscribesByAgent.clear();
+      };
     },
-    onMessage: (event, ws) => {
+    onMessage: async (event, ws) => {
+      wsRef = ws;
       try {
         const parsedRequest = websocketRequestSchema.safeParse(JSON.parse(event.data.toString()));
         if (!parsedRequest.success) {
@@ -84,17 +99,15 @@ app.get("/", upgradeWebSocket(async (c) => {
 
         const data = parsedRequest.data;
         try {
-          const targetAgent = requireMainAgent(data.agentId);
-          const agentKey = data.agentId ?? "";
+          await ensureSubscribed(data.agentId);
+          const key = agentKey(data.agentId);
           if (data.type === "abort") {
-            targetAgent.abort();
+            await agentRegistry.abort(data.agentId);
           } else if (data.type === "prompt") {
-            const promptOptions = promptOptionsByAgent.get(agentKey) ?? {};
-            targetAgent.prompt(data.message, optionsWithMcpServers(promptOptions, {
-              subagents: subagentMcpServerConfig(),
-            }));
+            const promptOptions = promptOptionsByAgent.get(key) ?? {};
+            await agentRegistry.prompt(data.agentId, data.message, promptOptions);
           } else if (data.type === "config") {
-            promptOptionsByAgent.set(agentKey, data.config);
+            promptOptionsByAgent.set(key, data.config);
           }
         } catch (err) {
           sendEvent(ws, {
@@ -112,6 +125,10 @@ app.get("/", upgradeWebSocket(async (c) => {
     }
   };
 }));
+
+function agentKey(agentId?: string) {
+  return agentId ?? "";
+}
 
 app.use("*", async (c) => {
   return c.text("Not found", 404);
