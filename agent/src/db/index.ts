@@ -1,7 +1,7 @@
 import { mkdirSync } from "fs";
 import path from "path";
 
-import { and, desc, eq, max, sql } from "drizzle-orm";
+import { and, desc, eq, max, or, sql } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/better-sqlite3";
 import { migrate } from "drizzle-orm/better-sqlite3/migrator";
 
@@ -131,6 +131,16 @@ interface QuerySubagentEventsParams {
 
 export async function querySubagentEvents({ subagentId, limit, offset, filter }: QuerySubagentEventsParams) {
   const filters = [eq(subagentEvents.subagentId, subagentId)];
+
+  if (!filter) {
+    filters.push(or(
+      eq(subagentEvents.eventType, "input.prompt"),
+      and(
+        eq(subagentEvents.eventType, "item.completed"),
+        eq(subagentEvents.itemType, "agent_message"),
+      ),
+    )!);
+  }
 
   if (filter?.eventType) {
     filters.push(eq(subagentEvents.eventType, filter.eventType));

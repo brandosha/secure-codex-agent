@@ -118,7 +118,7 @@ export function buildSubagentMcpServer() {
   });
 
   mcp.registerTool("query_events", {
-    description: "Query events for an existing async Codex subagent.",
+    description: "Query events for an existing async Codex subagent. By default this returns only conversation message events; provide a filter to inspect tool calls, reasoning, errors, or other event types.",
     inputSchema: queryEventsInputSchema,
   }, async (input) => {
     try {
