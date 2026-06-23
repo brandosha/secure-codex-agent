@@ -200,6 +200,11 @@ class AgentConnection {
   }
 
   recordAndPublish(event: AgentEvent, agent: Agent) {
+    if (agent.id !== undefined) {
+      agent.publish(event);
+      return true;
+    }
+
     try {
       db.insert(agentEvents).values({
         eventType: event.type,
