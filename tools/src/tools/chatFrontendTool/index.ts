@@ -39,7 +39,9 @@ const chatEventsQuerySchema = z.object({
 export function chatFrontendTool(options: ChatFrontendToolOptions = defaultOptions) {
   const auth = createLoginAuth(options);
 
-  return httpTool("/", (agent) => {
+  return httpTool("/", (agentRouter) => {
+    const agent = agentRouter.agent();
+
     const server = new Hono();
       if (auth) {
         server.get("/chat/login", async (c) => {

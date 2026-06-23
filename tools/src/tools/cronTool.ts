@@ -9,7 +9,9 @@ export function cronTool(
 ) {
   const from = `cron/${name}`;
 
-  return simpleTool((agent) => {
+  return simpleTool((agentRouter) => {
+    const agent = agentRouter.agent();
+
     CronJob.from({
       cronTime,
       onTick() {

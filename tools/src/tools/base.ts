@@ -9,17 +9,17 @@ export const WORKSPACE_PATH = "/home/agent/workspace";
 
 export type SimpleTool = {
   type: "simple",
-  mount: (agent: Agent) => void;
+  mount: (agentRouter: AgentRouter) => void;
 };
 export type HttpTool = {
   type: "http",
   route: string;
-  mount: (agent: Agent) => Hono;
+  mount: (agentRouter: AgentRouter) => Hono;
 };
 export type McpTool = {
   type: "mcp",
   name: string;
-  mount: (agent: Agent) => McpServer;
+  mount: (agentRouter: AgentRouter) => McpServer;
 };
 
 export type AnyTool = SimpleTool | HttpTool | McpTool;
@@ -28,7 +28,7 @@ export type Tool = AnyTool | AnyTool[];
 
 
 export function simpleTool(
-  mount: (agent: Agent) => void
+  mount: (agentRouter: AgentRouter) => void
 ): SimpleTool {
   return {
     type: "simple",
@@ -38,7 +38,7 @@ export function simpleTool(
 
 export function httpTool(
   route: string,
-  mount: (agent: Agent) => Hono
+  mount: (agentRouter: AgentRouter) => Hono
 ): HttpTool {
   return {
     type: "http",
@@ -49,14 +49,14 @@ export function httpTool(
 
 export function mcpTool(
   name: string,
-  mcp: McpServer | ((agent: Agent) => McpServer)
+  mcp: McpServer | ((agentRouter: AgentRouter) => McpServer)
 ): McpTool {
   return {
     type: "mcp",
     name,
-    mount: (agent) => {
+    mount: (agentRouter) => {
       if (typeof mcp === "function") {
-        return mcp(agent);
+        return mcp(agentRouter);
       }
       return mcp;
     }
@@ -65,32 +65,31 @@ export function mcpTool(
 
 export function webhookTool(
   name: string,
-  handler: (c: Context, agent: Agent) => Promise<Response>
+  handler: (c: Context, agentRouter: AgentRouter) => Promise<Response>
 ): HttpTool {
-  return httpTool(`/webhook/${name}`, (agent) => {
+  return httpTool(`/webhook/${name}`, (agentRouter) => {
     const app = new Hono();
-    app.all(`/`, (c) => handler(c, agent));
+    app.all(`/`, (c) => handler(c, agentRouter));
     return app;
   });
 }
 
 export function agentTools(tools: Tool[]) {
   const agentRouter = new AgentRouter("ws://agent");
-  const agent = agentRouter.agent();
   const mcpServersConfig: Record<string, unknown> = {}
   const publicApp = new Hono();
   const mcpApp = new Hono();
   const mcpAuthToken = crypto.randomUUID();
 
   registerAgentTools(tools, {
-    agent,
+    agentRouter,
     mcpServersConfig,
     publicApp,
     mcpApp,
     mcpAuthToken,
   });
 
-  agent.config({
+  agentRouter.agent().config({
     codex: {
       config: {
         mcp_servers: mcpServersConfig,
@@ -109,7 +108,7 @@ export function agentTools(tools: Tool[]) {
 }
 
 interface RegisterAgentToolsContext {
-  agent: Agent;
+  agentRouter: AgentRouter;
   mcpServersConfig: Record<string, unknown>;
   publicApp: Hono;
   mcpApp: Hono;
@@ -117,7 +116,7 @@ interface RegisterAgentToolsContext {
 }
 
 function registerAgentTools(tools: Tool[], context: RegisterAgentToolsContext) {
-  const { agent, mcpServersConfig, publicApp, mcpApp, mcpAuthToken } = context;
+  const { agentRouter, mcpServersConfig, publicApp, mcpApp, mcpAuthToken } = context;
 
   for (const tool of tools) {
     if (Array.isArray(tool)) {
@@ -126,10 +125,10 @@ function registerAgentTools(tools: Tool[], context: RegisterAgentToolsContext) {
     }
 
     if (tool.type === "http") {
-      const httpApp = tool.mount(agent);
+      const httpApp = tool.mount(agentRouter);
       publicApp.route(tool.route, httpApp);
     } else if (tool.type === "mcp") {
-      const mcp = tool.mount(agent);
+      const mcp = tool.mount(agentRouter);
 
       const route = `/mcp/${tool.name}`;
       const transport = new WebStandardStreamableHTTPServerTransport();
@@ -151,7 +150,7 @@ function registerAgentTools(tools: Tool[], context: RegisterAgentToolsContext) {
         },
       };
     } else {
-      tool.mount(agent);
+      tool.mount(agentRouter);
     }
   }
 }

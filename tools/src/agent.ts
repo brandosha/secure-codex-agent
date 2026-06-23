@@ -1,3 +1,4 @@
+import type { ServerContext } from "@modelcontextprotocol/server";
 import type { ThreadEvent } from "@openai/codex-sdk";
 import { desc } from "drizzle-orm";
 import { WebSocket } from "ws";
@@ -27,8 +28,13 @@ export interface PersistedAgentEvent {
   rawJson: AgentEvent;
 }
 
+const SUBAGENT_ID_HEADER = "X-Subagent-Id";
+const AGENT_ID_PATTERN = /^[a-zA-Z0-9_-]{1,63}$/;
+
+type AgentId = string | undefined;
+
 export class AgentRouter {
-  private _agents = new Map<string, Agent>();
+  private _agents = new Map<AgentId, Agent>();
   private _connection: AgentConnection;
 
   constructor(address: string) {
@@ -37,12 +43,16 @@ export class AgentRouter {
     });
   }
 
-  agent(id?: string) {
-    const key = agentKey(id);
-    let agent = this._agents.get(key);
+  agent(id?: AgentId): Agent;
+  agent(ctx: ServerContext): Agent;
+  agent(idOrContext?: AgentId | ServerContext) {
+    const id = typeof idOrContext === "string" || idOrContext === undefined
+      ? idOrContext
+      : agentIdFromMcpContext(idOrContext);
+    let agent = this._agents.get(id);
     if (!agent) {
       agent = new Agent(id, this._connection);
-      this._agents.set(key, agent);
+      this._agents.set(id, agent);
     }
     return agent;
   }
@@ -186,8 +196,12 @@ class AgentConnection {
   }
 }
 
-function agentKey(id?: string) {
-  return id ?? "__main__";
+function agentIdFromMcpContext(ctx: ServerContext) {
+  const id = ctx.http?.req?.headers.get(SUBAGENT_ID_HEADER)?.trim();
+  if (id && !AGENT_ID_PATTERN.test(id)) {
+    throw new Error(`MCP request has an invalid ${SUBAGENT_ID_HEADER} header.`);
+  }
+  return id || undefined;
 }
 
 export function agent(tools: Tool[]) {

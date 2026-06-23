@@ -5,7 +5,7 @@ import { CronJob } from "cron";
 import { McpServer } from "@modelcontextprotocol/server";
 import { z } from "zod";
 
-import type { Agent } from "../../agent";
+import type { Agent, AgentRouter } from "../../agent";
 import { mcpTextResult } from "../../utils";
 import { mcpTool } from "../base";
 
@@ -13,18 +13,24 @@ const DATA_DIRECTORY = path.resolve(import.meta.dirname, "data");
 const SCHEDULE_FILE_PATH = path.join(DATA_DIRECTORY, "schedule.json");
 
 const persistedScheduleSchema = z.object({
+  agentId: z.string().trim().min(1).optional(),
   cronTime: z.string().trim().min(1),
   prompt: z.string().trim().min(1),
 });
 
+const scheduleKeySchema = z.string()
+  .trim()
+  .min(1)
+  .refine((key) => !key.includes("/"), "Schedule keys cannot contain '/'.");
+
 const createScheduleSchema = z.object({
-  key: z.string().trim().min(1),
+  key: scheduleKeySchema,
   cronTime: z.string().trim().min(1),
   prompt: z.string().trim().min(1),
 });
 
 const updateScheduleSchema = z.object({
-  key: z.string().trim().min(1),
+  key: scheduleKeySchema,
   cronTime: z.string().trim().min(1).optional(),
   prompt: z.string().trim().min(1).optional(),
 });
@@ -33,10 +39,10 @@ type PersistedSchedule = z.infer<typeof persistedScheduleSchema>;
 type ScheduleRecord = Record<string, PersistedSchedule>;
 
 export function scheduleMcpTool() {
-  return mcpTool("schedule", (agent) => createScheduleMcpServer(agent));
+  return mcpTool("schedule", (agentRouter) => createScheduleMcpServer(agentRouter));
 }
 
-function createScheduleMcpServer(agent: Agent) {
+function createScheduleMcpServer(agentRouter: AgentRouter) {
   const jobs = new Map<string, CronJob>();
   const schedules: ScheduleRecord = {};
   const stateMutex = createMutex();
@@ -50,35 +56,38 @@ function createScheduleMcpServer(agent: Agent) {
   mcp.registerTool("create_schedule", {
     description: "Create a named recurring prompt schedule for the agent.",
     inputSchema: createScheduleSchema,
-  }, async (input) => {
+  }, async (input, ctx) => {
     await ready;
 
     return stateMutex.runExclusive(async () => {
+      const agent = agentRouter.agent(ctx);
+      const key = scheduleStorageKey(agent, input.key);
       const schedule = {
+        agentId: agent.id,
         cronTime: input.cronTime,
         prompt: input.prompt,
       };
 
-      if (schedules[input.key]) {
+      if (schedules[key]) {
         return mcpTextResult(`Schedule ${input.key} already exists. Use update_schedule instead.`, true);
       }
 
       let job: CronJob;
       try {
-        job = createJob(input.key, schedule, agent, false);
+        job = createJob(key, schedule, agentRouter, false);
       } catch (error) {
         return mcpTextResult(`Invalid cron expression for ${input.key}: ${formatError(error)}`, true);
       }
 
-      schedules[input.key] = schedule;
+      schedules[key] = schedule;
       try {
         await persistSchedules(schedules);
       } catch (error) {
-        delete schedules[input.key];
+        delete schedules[key];
         return mcpTextResult(`Failed to persist schedule ${input.key}: ${formatError(error)}`, true);
       }
 
-      jobs.set(input.key, job);
+      jobs.set(key, job);
       job.start();
       return mcpTextResult(`Created schedule ${input.key}: ${JSON.stringify({ key: input.key, ...schedule })}`);
     });
@@ -87,12 +96,14 @@ function createScheduleMcpServer(agent: Agent) {
   mcp.registerTool("update_schedule", {
     description: "Update an existing schedule's cron time, prompt, or both.",
     inputSchema: updateScheduleSchema,
-  }, async (input) => {
+  }, async (input, ctx) => {
     await ready;
 
     return stateMutex.runExclusive(async () => {
-      const current = schedules[input.key];
-      if (!current) {
+      const agent = agentRouter.agent(ctx);
+      const key = scheduleStorageKey(agent, input.key);
+      const current = schedules[key];
+      if (!isAgentSchedule(current, agent)) {
         return mcpTextResult(`Schedule ${input.key} does not exist.`, true);
       }
 
@@ -101,28 +112,29 @@ function createScheduleMcpServer(agent: Agent) {
       }
 
       const nextSchedule: PersistedSchedule = {
+        agentId: current.agentId,
         cronTime: input.cronTime ?? current.cronTime,
         prompt: input.prompt ?? current.prompt,
       };
 
       let nextJob: CronJob;
       try {
-        nextJob = createJob(input.key, nextSchedule, agent, false);
+        nextJob = createJob(key, nextSchedule, agentRouter, false);
       } catch (error) {
         return mcpTextResult(`Invalid cron expression for ${input.key}: ${formatError(error)}`, true);
       }
 
-      schedules[input.key] = nextSchedule;
+      schedules[key] = nextSchedule;
       try {
         await persistSchedules(schedules);
       } catch (error) {
-        schedules[input.key] = current;
+        schedules[key] = current;
         return mcpTextResult(`Failed to persist schedule ${input.key}: ${formatError(error)}`, true);
       }
 
-      const previousJob = jobs.get(input.key);
+      const previousJob = jobs.get(key);
       previousJob?.stop();
-      jobs.set(input.key, nextJob);
+      jobs.set(key, nextJob);
       nextJob.start();
 
       return mcpTextResult(`Updated schedule ${input.key}: ${JSON.stringify({ key: input.key, ...nextSchedule })}`);
@@ -132,29 +144,31 @@ function createScheduleMcpServer(agent: Agent) {
   mcp.registerTool("delete_schedule", {
     description: "Delete an existing named schedule.",
     inputSchema: z.object({
-      key: z.string().trim().min(1),
+      key: scheduleKeySchema,
     }),
-  }, async ({ key }) => {
+  }, async ({ key }, ctx) => {
     await ready;
 
     return stateMutex.runExclusive(async () => {
-      if (!schedules[key]) {
+      const agent = agentRouter.agent(ctx);
+      const storageKey = scheduleStorageKey(agent, key);
+      if (!isAgentSchedule(schedules[storageKey], agent)) {
         return mcpTextResult(`Schedule ${key} does not exist.`, true);
       }
 
-      const existing = schedules[key];
-      delete schedules[key];
+      const existing = schedules[storageKey];
+      delete schedules[storageKey];
 
       try {
         await persistSchedules(schedules);
       } catch (error) {
-        schedules[key] = existing;
+        schedules[storageKey] = existing;
         return mcpTextResult(`Failed to persist schedule deletion for ${key}: ${formatError(error)}`, true);
       }
 
-      const job = jobs.get(key);
+      const job = jobs.get(storageKey);
       job?.stop();
-      jobs.delete(key);
+      jobs.delete(storageKey);
 
       return mcpTextResult(`Deleted schedule ${key}.`);
     });
@@ -162,14 +176,17 @@ function createScheduleMcpServer(agent: Agent) {
 
   mcp.registerTool("list_schedules", {
     description: "List all saved prompt schedules.",
-  }, async () => {
+  }, async (ctx) => {
     await ready;
+    const agent = agentRouter.agent(ctx);
 
-    const list = Object.entries(schedules).map(([key, schedule]) => ({
-      key,
-      cronTime: schedule.cronTime,
-      prompt: schedule.prompt,
-    }));
+    const list = Object.entries(schedules)
+      .filter(([, schedule]) => isAgentSchedule(schedule, agent))
+      .map(([key, schedule]) => ({
+        key: scheduleDisplayKey(key, agent),
+        cronTime: schedule.cronTime,
+        prompt: schedule.prompt,
+      }));
 
     return mcpTextResult(JSON.stringify(list));
   });
@@ -181,7 +198,7 @@ function createScheduleMcpServer(agent: Agent) {
 
     for (const [key, schedule] of Object.entries(loadedSchedules)) {
       try {
-        jobs.set(key, createJob(key, schedule, agent));
+        jobs.set(key, createJob(key, schedule, agentRouter));
         schedules[key] = schedule;
       } catch (error) {
         console.error(`Skipping invalid persisted schedule ${key}:`, error);
@@ -235,14 +252,28 @@ async function loadSchedulesFromDisk(): Promise<ScheduleRecord> {
   }
 }
 
-function createJob(key: string, schedule: PersistedSchedule, agent: Agent, start = true) {
+function createJob(key: string, schedule: PersistedSchedule, agentRouter: AgentRouter, start = true) {
   return CronJob.from({
     cronTime: schedule.cronTime,
     onTick() {
-      agent.prompt(schedule.prompt, `schedule/${key}`);
+      const agent = agentRouter.agent(schedule.agentId);
+      agent.prompt(schedule.prompt, `schedule/${scheduleDisplayKey(key, agent)}`);
     },
     start,
   });
+}
+
+function isAgentSchedule(schedule: PersistedSchedule | undefined, agent: Agent) {
+  return schedule?.agentId === agent.id;
+}
+
+function scheduleStorageKey(agent: Agent, key: string) {
+  return agent.id ? `${agent.id}/${key}` : key;
+}
+
+function scheduleDisplayKey(key: string, agent: Agent) {
+  const prefix = agent.id ? `${agent.id}/` : "";
+  return prefix && key.startsWith(prefix) ? key.slice(prefix.length) : key;
 }
 
 function formatError(error: unknown) {

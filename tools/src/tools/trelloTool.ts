@@ -6,7 +6,7 @@ import { McpServer } from "@modelcontextprotocol/server";
 import type { Context } from "hono";
 import { z } from "zod";
 
-import type { Agent } from "../agent";
+import type { Agent, AgentRouter } from "../agent";
 import type { AnyTool } from "./base";
 import { mcpTool, webhookTool, WORKSPACE_PATH } from "./base";
 import { mcpTextResult, redactSecrets } from "../utils";
@@ -23,7 +23,7 @@ export interface TrelloToolOptions {
 
 interface TrelloSharedState {
   webhook?: {
-    callbackUrl: string;
+    callbackUrl: (agentId?: string) => string;
     secret: string;
   };
   currentMemberIdPromise: Promise<string>;
@@ -78,11 +78,13 @@ export function trelloTool(options: TrelloToolOptions) {
     webhook: buildTrelloWebhookConfig(options),
   };
 
-  const tools: AnyTool[] = [mcpTool("trello", createTrelloMcpServer(options, state))];
+  const tools: AnyTool[] = [
+    mcpTool("trello", (agentRouter) => createTrelloMcpServer(options, agentRouter, state))
+  ];
   if (state.webhook) {
     tools.push(webhookTool(
       "trello",
-      (c, agent) => handleTrelloWebhookRequest(c, agent, options, {
+      (c, agentRouter) => handleTrelloWebhookRequest(c, agentRouter, options, {
         ...state.webhook!,
         currentMemberIdPromise: state.currentMemberIdPromise,
       }),
@@ -101,13 +103,15 @@ function buildTrelloWebhookConfig(options: TrelloToolOptions) {
     throw new Error("Trello webhook secret must be configured when the origin hostname is configured.");
   }
 
+  const { originHostname, secret } = options;
+
   return {
-    callbackUrl: buildTrelloWebhookCallbackUrl(options.originHostname),
-    secret: options.secret,
+    callbackUrl: (agentId?: string) => buildTrelloWebhookCallbackUrl(originHostname, agentId),
+    secret,
   };
 }
 
-function createTrelloMcpServer(options: TrelloToolOptions, state: TrelloSharedState) {
+function createTrelloMcpServer(options: TrelloToolOptions, agentRouter: AgentRouter, state: TrelloSharedState) {
   const mcp = new McpServer({
     name: "Trello MCP Tool",
     version: "0.0.1",
@@ -260,12 +264,15 @@ function createTrelloMcpServer(options: TrelloToolOptions, state: TrelloSharedSt
       inputSchema: z.object({
         resourceId: z.string().trim().min(1),
       }),
-    }, async ({ resourceId }) => {
+    }, async ({ resourceId }, ctx) => {
       try {
+        const agent = agentRouter.agent(ctx);
+        const callbackUrl = state.webhook!.callbackUrl(agent.id);
+
         const webhooks = await listTrelloWebhooks(options);
         const existing = webhooks.find((webhook) =>
           webhook.idModel === resourceId
-          && webhook.callbackURL === state.webhook!.callbackUrl
+          && webhook.callbackURL === callbackUrl
         );
 
         if (existing) {
@@ -278,7 +285,7 @@ function createTrelloMcpServer(options: TrelloToolOptions, state: TrelloSharedSt
           body: {
             idModel: resourceId,
             description: `Secure Codex Agent: ${resourceId}`,
-            callbackURL: state.webhook!.callbackUrl,
+            callbackURL: callbackUrl,
           },
           apiKey: options.apiKey,
           token: options.token,
@@ -298,7 +305,7 @@ function createTrelloMcpServer(options: TrelloToolOptions, state: TrelloSharedSt
   return mcp;
 }
 
-export function buildTrelloWebhookCallbackUrl(originHostname: string) {
+export function buildTrelloWebhookCallbackUrl(originHostname: string, agentId?: string) {
   if (typeof originHostname !== "string") {
     throw new Error("Trello webhook origin hostname must be configured.");
   }
@@ -312,6 +319,9 @@ export function buildTrelloWebhookCallbackUrl(originHostname: string) {
     throw new Error("Trello webhook origin hostname must be a hostname, optionally with a port.");
   }
 
+  if (agentId) {
+    return `https://${normalizedHostname}/webhook/trello?agentId=${encodeURIComponent(agentId)}`;
+  }
   return `https://${normalizedHostname}/webhook/trello`;
 }
 
@@ -349,7 +359,7 @@ async function listTrelloWebhooks(options: TrelloToolOptions) {
 
 async function handleTrelloWebhookRequest(
   c: Context,
-  agent: Agent,
+  agentRouter: AgentRouter,
   options: TrelloToolOptions,
   webhook: NonNullable<TrelloSharedState["webhook"]> & {
     currentMemberIdPromise: Promise<string>;
@@ -363,10 +373,13 @@ async function handleTrelloWebhookRequest(
     return c.text("Method Not Allowed", 405);
   }
 
+  const agentId = c.req.query("agentId");
+  const callbackUrl = webhook.callbackUrl(agentId);
+
   const bodyText = await c.req.text();
   if (!verifyTrelloWebhookSignature({
     body: bodyText,
-    callbackUrl: webhook.callbackUrl,
+    callbackUrl: callbackUrl,
     secret: webhook.secret,
     signature: c.req.header("x-trello-webhook"),
   })) {
@@ -374,6 +387,8 @@ async function handleTrelloWebhookRequest(
   }
 
   try {
+    const agent = agentRouter.agent(agentId);
+
     const payload = JSON.parse(bodyText) as TrelloWebhookPayload;
     const clientIdentifier = c.req.header("x-trello-client-identifier");
 

@@ -9,7 +9,8 @@ if [ "$(id -u agent)" -ne "$TARGET_UID" ]; then
     echo "Updating agent UID to match host: $TARGET_UID"
     usermod -u "$TARGET_UID" agent
     # Fix ownership of the home directory if needed
-    chown -R agent:agent /home/agent
+    chown -R agent:agent /home/agent/.codex /home/agent/.secure-codex-agent || true
+    chown agent:agent /home/agent
 fi
 
 
