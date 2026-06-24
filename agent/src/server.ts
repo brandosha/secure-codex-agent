@@ -1,3 +1,5 @@
+import dns from "dns/promises"
+
 import { serve, upgradeWebSocket } from "@hono/node-server";
 import { getConnInfo } from "@hono/node-server/conninfo";
 import { ThreadEvent } from "@openai/codex-sdk";
@@ -45,14 +47,20 @@ function sendEvent(ws: WSContext, event: WebsocketEvent, agentId?: string) {
   ws.send(JSON.stringify({ agentId, event }));
 }
 
-// Block any local server access
+// Block requests from any source other than the tools container service
 app.use("*", async (c, next) => {
   const connInfo = getConnInfo(c);
   const remoteAddr = connInfo.remote.address;
 
-  if (["localhost", "127.0.0.1", "::1", undefined].includes(remoteAddr)) {
+  if (!remoteAddr) {
     return c.text("Forbidden", 403);
   }
+
+  const toolsRemoteAddresses = await dns.resolve4("tools");
+  if (!toolsRemoteAddresses.includes(remoteAddr)) {
+    return c.text("Forbidden", 403);
+  }
+
   return next();
 });
 
@@ -133,6 +141,7 @@ app.use("*", async (c) => {
 const wss = new WebSocketServer({ noServer: true });
 serve({
   fetch: app.fetch,
+  hostname: "0.0.0.0",
   port: 80,
   websocket: {
     server: wss,

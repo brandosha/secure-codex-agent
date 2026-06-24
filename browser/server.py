@@ -141,6 +141,7 @@ async def lifespan(app: FastAPI):
                 "--remote-debugging-port=9222",
                 "--no-sandbox",
                 "--disable-gpu",
+                "--host-resolver-rules=MAP agent.localhost agent",
             ],
         )
 
@@ -198,7 +199,10 @@ async def list_browser_pages() -> list[dict[str, str | None]]:
 
 @mcp.tool()
 async def open_browser_page(page_name: str, url: str) -> dict[str, str]:
-    """Open or reuse a named page in the normal certificate-validating context."""
+    """Open or reuse a named page in the normal certificate-validating context.
+    
+    When targeting a local server, you must use `agent.localhost` instead of `localhost`.
+    """
     if browser_context is None:
         raise RuntimeError("Persistent Chromium is not initialized")
     if not isinstance(page_name, str) or not page_name.strip():
@@ -219,8 +223,7 @@ async def open_insecure_browser_page(page_name: str, url: str) -> dict[str, str]
     """Open or reuse a named page in an isolated context that ignores HTTPS errors.
 
     This bypasses all TLS certificate validation for the page's navigations and
-    subresources. Its cookies, storage, permissions, and session state are
-    isolated from the normal persistent browser context.
+    subresources.
     """
     if not isinstance(page_name, str) or not page_name.strip():
         raise ValueError("page_name must be a non-empty string")

@@ -17,6 +17,9 @@ services:
       - HOST_UID=${HOST_UID}
       - GIT_USER_NAME=${GIT_USER_NAME}
       - GIT_USER_EMAIL=${GIT_USER_EMAIL}
+    networks:
+      - browser-net
+      - tools-net
   tools:
     build: ./tools
     restart: unless-stopped
@@ -33,6 +36,8 @@ services:
     depends_on:
       agent:
         condition: service_healthy
+    networks:
+      - tools-net
   browser:
     build: ./browser
     restart: unless-stopped
@@ -41,8 +46,14 @@ services:
       - browser-data:/home/agent/.browser-data
     environment:
       - HOST_UID=${HOST_UID}
+    networks:
+      - browser-net
 
 volumes:
   codex-home:
   tools-ssh:
   browser-data:
+
+networks:
+  browser-net:
+  tools-net:
