@@ -5,6 +5,7 @@ import {
   type LoginAuthUser,
   newRelicMcpTool,
   remindersTool,
+  resourceLockMcpTool,
   scheduleMcpTool,
   slackMcpTool,
   trelloTool,
@@ -42,4 +43,5 @@ agentTools([
   }),
   scheduleMcpTool(),
   remindersTool(),
+  resourceLockMcpTool(),
 ]);

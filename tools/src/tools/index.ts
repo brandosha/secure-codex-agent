@@ -4,6 +4,7 @@ export * from "./cronTool";
 export * from "./gitMcpTool";
 export * from "./newRelicMcpTool";
 export * from "./remindersTool";
+export * from "./resourceLockMcpTool";
 export * from "./scheduleMcpTool";
 export * from "./slackMcpTool";
 export * from "./trelloTool";
