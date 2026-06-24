@@ -116,8 +116,12 @@ export function assertPushAllowed(options: GitMcpToolOptions, refspec?: string) 
     throw new GitPolicyError("Push requires an explicit branch or refspec so branch policy can be checked.");
   }
 
-  if (options.allowForcePush === false && refspec.includes("+")) {
+  if (options.allowForcePush !== true && refspec.includes("+")) {
     throw new GitPolicyError(`Force pushes are prohibited: refspec ${refspec} contains '+'.`);
+  }
+
+  if (options.allowForcePush !== true && isDeletionRefspec(refspec)) {
+    throw new GitPolicyError("Deleting remote branches is prohibited unless allowForcePush is true.");
   }
 
   const targetBranch = pushTargetBranch(refspec);
@@ -142,13 +146,24 @@ export function assertPushAllowed(options: GitMcpToolOptions, refspec?: string) 
 }
 
 function pushTargetBranch(refspec: string) {
-  const target = refspec.split(":", 2)[1] ?? refspec;
+  const refspecBody = stripForcePrefix(refspec);
+  const target = refspecBody.split(":", 2)[1] ?? refspecBody;
   const normalizedTarget = normalizeBranchName(target);
   if (!normalizedTarget) {
     throw new GitPolicyError(`Unable to determine push target branch from refspec ${refspec}.`);
   }
 
   return normalizedTarget;
+}
+
+function isDeletionRefspec(refspec: string) {
+  const refspecBody = stripForcePrefix(refspec);
+  const separatorIndex = refspecBody.indexOf(":");
+  return separatorIndex === 0;
+}
+
+function stripForcePrefix(refspec: string) {
+  return refspec.startsWith("+") ? refspec.slice(1) : refspec;
 }
 
 function normalizeBranchName(branch: string) {
