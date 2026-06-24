@@ -11,7 +11,7 @@ import type { AnyTool } from "./base";
 import { mcpTool, webhookTool, WORKSPACE_PATH } from "./base";
 import { mcpTextResult, redactSecrets } from "../utils";
 
-const TRELLO_MCP_CLIENT_IDENTIFIER = "TrelloMcpTool";
+const TRELLO_MCP_CLIENT_IDENTIFIER = "SecureCodexAgentTrelloMcpTool";
 const TRELLO_WEBHOOK_SOURCE = "trello/webhook";
 
 export interface TrelloToolOptions {
@@ -124,8 +124,9 @@ function createTrelloMcpServer(options: TrelloToolOptions, agentRouter: AgentRou
       method: z.enum(["GET", "POST", "PUT", "DELETE"]),
       body: z.record(z.string(), z.any()).optional(),
     }),
-  }, async (input) => {
+  }, async (input, ctx) => {
     try {
+      const agent = agentRouter.agent(ctx);
       await authorizeTrelloRequest({
         apiKey: options.apiKey,
         token: options.token,
@@ -140,7 +141,7 @@ function createTrelloMcpServer(options: TrelloToolOptions, agentRouter: AgentRou
         body: input.body,
         apiKey: options.apiKey,
         token: options.token,
-        clientIdentifier: TRELLO_MCP_CLIENT_IDENTIFIER,
+        clientIdentifier: trelloMcpClientIdentifier(agent.id),
       });
 
       return {
@@ -173,8 +174,9 @@ function createTrelloMcpServer(options: TrelloToolOptions, agentRouter: AgentRou
     inputSchema: z.object({
       body: z.record(z.string(), z.any()),
     }),
-  }, async (input) => {
+  }, async (input, ctx) => {
     try {
+      const agent = agentRouter.agent(ctx);
       const currentMemberId = await state.currentMemberIdPromise;
       const response = await makeTrelloApiRequest({
         method: "POST",
@@ -182,7 +184,7 @@ function createTrelloMcpServer(options: TrelloToolOptions, agentRouter: AgentRou
         body: buildCreateCardBody(input.body, currentMemberId),
         apiKey: options.apiKey,
         token: options.token,
-        clientIdentifier: TRELLO_MCP_CLIENT_IDENTIFIER,
+        clientIdentifier: trelloMcpClientIdentifier(agent.id),
       });
 
       return {
@@ -219,8 +221,9 @@ function createTrelloMcpServer(options: TrelloToolOptions, agentRouter: AgentRou
       mime_type: z.string().optional().describe("Optional MIME type for the attachment."),
       set_cover: z.boolean().optional().describe("Whether Trello should use this attachment as the card cover."),
     }),
-  }, async (input) => {
+  }, async (input, ctx) => {
     try {
+      const agent = agentRouter.agent(ctx);
       const response = await uploadTrelloAttachmentFromWorkspace({
         apiKey: options.apiKey,
         token: options.token,
@@ -230,7 +233,7 @@ function createTrelloMcpServer(options: TrelloToolOptions, agentRouter: AgentRou
         mimeType: input.mime_type,
         setCover: input.set_cover,
         currentMemberIdPromise: state.currentMemberIdPromise,
-        clientIdentifier: TRELLO_MCP_CLIENT_IDENTIFIER,
+        clientIdentifier: trelloMcpClientIdentifier(agent.id),
       });
 
       return {
@@ -303,6 +306,10 @@ function createTrelloMcpServer(options: TrelloToolOptions, agentRouter: AgentRou
   }
 
   return mcp;
+}
+
+function trelloMcpClientIdentifier(agentId?: string) {
+  return agentId ? `${TRELLO_MCP_CLIENT_IDENTIFIER}/${agentId}` : TRELLO_MCP_CLIENT_IDENTIFIER;
 }
 
 export function buildTrelloWebhookCallbackUrl(originHostname: string, agentId?: string) {
@@ -392,7 +399,7 @@ async function handleTrelloWebhookRequest(
     const payload = JSON.parse(bodyText) as TrelloWebhookPayload;
     const clientIdentifier = c.req.header("x-trello-client-identifier");
 
-    if (clientIdentifier === TRELLO_MCP_CLIENT_IDENTIFIER) {
+    if (clientIdentifier === trelloMcpClientIdentifier(agent.id)) {
       return c.text("OK", 200);
     }
 
