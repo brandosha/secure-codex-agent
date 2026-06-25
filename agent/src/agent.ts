@@ -31,9 +31,12 @@ export const agentRequestMessageSchema = z.discriminatedUnion("type", [
 
 export type AgentRequestMessage = z.infer<typeof agentRequestMessageSchema>;
 
+export type AgentId = string | undefined;
+
 export interface AgentOptions {
   threadId?: string;
   promptOptions?: PromptOptions;
+  identity?: AgentId;
 }
 
 const __dirname = import.meta.dirname;
@@ -41,6 +44,7 @@ const __dirname = import.meta.dirname;
 export class Agent extends PubSub<ThreadEvent> {
   threadId?: string;
   promptOptions: PromptOptions;
+  identity: AgentId;
   private _agentProcess;
 
   constructor(options: AgentOptions = {}) {
@@ -48,6 +52,7 @@ export class Agent extends PubSub<ThreadEvent> {
     
     this.threadId = options.threadId;
     this.promptOptions = options.promptOptions || {};
+    this.identity = options.identity;
 
     const { HOST_UID } = process.env;
     if (!HOST_UID) {
@@ -82,7 +87,7 @@ export class Agent extends PubSub<ThreadEvent> {
         url: `http://browser:8000/mcp`,
       }
     });
-    this._send({ type: "prompt", message, options });
+    this._send({ type: "prompt", message: promptWithAgentIdentity(message, this.identity), options });
   }
 
   abort() {
@@ -99,6 +104,26 @@ export class Agent extends PubSub<ThreadEvent> {
   }
 }
 
+export function promptWithAgentIdentity(message: string, identity: AgentId) {
+  const description = identity === undefined
+    ? [
+      "You are the primary agent.",
+      "You are not a subagent.",
+    ]
+    : [
+      "You are running as a subagent.",
+      `Your subagent id is '${identity}'.`,
+    ];
+
+  return [
+    "<agent_identity>",
+    ...description,
+    "</agent_identity>",
+    "",
+    message,
+  ].join("\n");
+}
+
 let mainAgent: Agent | undefined;
 export function getMainAgent() {
   if (mainAgent) {
@@ -112,7 +137,7 @@ export function getMainAgent() {
   try {
     const threadId = readFileSync(CODEX_MAIN_AGENT_THREAD_ID_PATH, "utf-8").trim();
     agent = new Agent({
-      threadId
+      threadId,
     });
   } catch (error) {
     console.error("Starting new main agent thread");

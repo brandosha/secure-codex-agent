@@ -423,6 +423,7 @@ export class SubagentManager {
     const subagent = await this._requireSubagent(id);
     const agent = new Agent({
       threadId: subagent.codexThreadId ?? undefined,
+      identity: id,
     });
 
     const live: LiveSubagent = {
