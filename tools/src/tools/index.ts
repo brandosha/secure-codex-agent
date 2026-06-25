@@ -2,6 +2,7 @@ export * from "./base";
 export * from "./chatFrontendTool";
 export * from "./cronTool";
 export * from "./gitMcpTool";
+export * from "./mysqlTool";
 export * from "./newRelicMcpTool";
 export * from "./remindersTool";
 export * from "./resourceLockMcpTool";
