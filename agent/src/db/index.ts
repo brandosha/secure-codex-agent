@@ -1,7 +1,7 @@
 import { mkdirSync } from "fs";
 import path from "path";
 
-import { and, desc, eq, max, or, sql } from "drizzle-orm";
+import { and, asc, desc, eq, max, or } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/better-sqlite3";
 import { migrate } from "drizzle-orm/better-sqlite3/migrator";
 
@@ -23,7 +23,6 @@ export async function createSubagent(input: { id: string; name: string }) {
   return db.insert(subagents).values({
     id: input.id,
     name: input.name,
-    archived: false,
   });
 }
 
@@ -32,12 +31,39 @@ export async function getSubagent(id: string) {
   return subagent;
 }
 
-export async function listUnarchivedSubagents() {
-  return db.select().from(subagents).where(eq(subagents.archived, false));
+interface ListSubagentsParams {
+  limit: number;
+  offset: number;
 }
 
-export async function archiveSubagent(id: string) {
-  return db.update(subagents).set({ archived: true }).where(eq(subagents.id, id));
+export async function listSubagents({ limit, offset }: ListSubagentsParams) {
+  const latestEventsSubquery = db
+    .select({
+      subagentId: subagentEvents.subagentId,
+      latestEventId: max(subagentEvents.id).as("latest_event_id"),
+    })
+    .from(subagentEvents)
+    .groupBy(subagentEvents.subagentId)
+    .as("latest_events");
+
+  return db
+    .select({
+      id: subagents.id,
+      name: subagents.name,
+      codexThreadId: subagents.codexThreadId,
+      latestEventId: subagentEvents.id,
+      latestEventCreatedAt: subagentEvents.createdAt,
+    })
+    .from(subagents)
+    .leftJoin(latestEventsSubquery, eq(subagents.id, latestEventsSubquery.subagentId))
+    .leftJoin(subagentEvents, eq(subagentEvents.id, latestEventsSubquery.latestEventId))
+    .orderBy(
+      desc(subagentEvents.createdAt),
+      desc(subagentEvents.id),
+      asc(subagents.id),
+    )
+    .limit(limit)
+    .offset(offset);
 }
 
 export async function updateSubagentThreadId(id: string, codexThreadId: string) {

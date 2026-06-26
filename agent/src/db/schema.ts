@@ -41,7 +41,6 @@ export const subagents = sqliteTable('subagents', {
   id: text('id').primaryKey(),
   name: text('name').notNull(),
   codexThreadId: text('codex_thread_id'),
-  archived: integer('archived', { mode: 'boolean' }).notNull().default(false),
 });
 
 export const subagentEvents = sqliteTable('subagent_events', {

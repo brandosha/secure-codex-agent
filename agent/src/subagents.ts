@@ -6,14 +6,13 @@ import { z } from "zod";
 
 import { Agent, PromptOptions } from "./agent";
 import {
-  archiveSubagent,
   createSubagent,
   getLatestAssistantMessage,
   getLatestSubagentEvent,
   getSubagent,
   getSubagentStatus,
   insertSubagentEvent,
-  listUnarchivedSubagents,
+  listSubagents,
   querySubagentEvents,
   updateSubagentThreadId,
   type LifecycleStatus,
@@ -24,6 +23,8 @@ import { SUBAGENT_EVENT_TYPES, SUBAGENT_ITEM_TYPES, type SubagentInputEvent } fr
 const SUBAGENT_ID_PATTERN = /^[a-zA-Z0-9_-]{1,63}$/;
 const DEFAULT_WAIT_TIMEOUT_MS = 300_000;
 const MAX_WAIT_TIMEOUT_MS = 3_600_000;
+const DEFAULT_LIST_LIMIT = 20;
+const MAX_LIST_LIMIT = 100;
 
 const subagentIdSchema = z.object({
   id: z.string().regex(SUBAGENT_ID_PATTERN),
@@ -56,11 +57,17 @@ const waitInputSchema = z.object({
   timeoutMs: z.number().int().positive().lte(MAX_WAIT_TIMEOUT_MS).optional(),
 });
 
+const listInputSchema = z.object({
+  limit: z.number().int().positive().max(MAX_LIST_LIMIT).optional(),
+  offset: z.number().int().nonnegative().optional(),
+});
+
 type SubagentIdInput = z.infer<typeof subagentIdSchema>;
 type StartInput = z.infer<typeof startInputSchema>;
 type PromptInput = z.infer<typeof promptInputSchema>;
 type QueryEventsInput = z.infer<typeof queryEventsInputSchema>;
 type WaitInput = z.infer<typeof waitInputSchema>;
+type ListInput = z.infer<typeof listInputSchema>;
 type SubagentPromptOptionsBuilder = (id: string, options?: PromptOptions) => PromptOptions;
 
 let subagentPromptOptionsBuilder: SubagentPromptOptionsBuilder = (_id, options = {}) => options;
@@ -129,10 +136,11 @@ export function buildSubagentMcpServer() {
   });
 
   mcp.registerTool("list", {
-    description: "List existing unarchived subagents with their lifecycle status.",
-  }, async () => {
+    description: "List existing subagents with their lifecycle status, ordered by latest activity.",
+    inputSchema: listInputSchema,
+  }, async (input) => {
     try {
-      return mcpJsonResult(await subagentManager.list());
+      return mcpJsonResult(await subagentManager.list(input));
     } catch (error) {
       return mcpTextResult(formatError(error), true);
     }
@@ -149,17 +157,6 @@ export function buildSubagentMcpServer() {
     }
   });
 
-  mcp.registerTool("archive", {
-    description: "Archive a subagent so its status resource no longer appears in resources/list.",
-    inputSchema: subagentIdSchema,
-  }, async (input) => {
-    try {
-      return mcpJsonResult(await subagentManager.archive(input));
-    } catch (error) {
-      return mcpTextResult(formatError(error), true);
-    }
-  });
-
   mcp.registerResource("subagent-status", new ResourceTemplate("subagent://status/{id}", {
     list: async () => ({
       resources: (await subagentManager.listStatusResources()).map((subagent) => ({
@@ -171,7 +168,7 @@ export function buildSubagentMcpServer() {
     }),
   }), {
     title: "Subagent Status",
-    description: "Status-only resources for unarchived subagents.",
+    description: "Status-only resources for the most recently active subagents.",
     mimeType: "text/plain",
   }, async (uri, variables) => {
     const id = getTemplateVariable(variables, "id");
@@ -308,13 +305,6 @@ export class SubagentManager {
     return this._summary(input.id);
   }
 
-  async archive(input: SubagentIdInput) {
-    await this._requireSubagent(input.id);
-    await archiveSubagent(input.id);
-    this._mcp?.sendResourceListChanged();
-    return this._summary(input.id);
-  }
-
   async queryEvents(input: QueryEventsInput) {
     await this._requireSubagent(input.id);
     const events = await querySubagentEvents({
@@ -370,27 +360,39 @@ export class SubagentManager {
   }
 
   async listStatusResources() {
-    return listUnarchivedSubagents();
+    const { subagents } = await this.list();
+    return subagents;
   }
 
-  async list() {
-    const subagents = await listUnarchivedSubagents();
+  async list(input?: ListInput) {
+    const limit = input?.limit ?? DEFAULT_LIST_LIMIT;
+    const offset = input?.offset ?? 0;
+    const subagents = await listSubagents({
+      limit: limit + 1,
+      offset,
+    });
+    const hasMore = subagents.length > limit;
+    const page = subagents.slice(0, limit);
+
     return {
-      subagents: await Promise.all(subagents.map(async (subagent) => {
-        const latestEvent = await getLatestSubagentEvent(subagent.id);
+      limit,
+      offset,
+      count: page.length,
+      hasMore,
+      subagents: await Promise.all(page.map(async (subagent) => {
         return {
           id: subagent.id,
           name: subagent.name,
           uri: subagentStatusUri(subagent.id),
           status: await getSubagentStatus(subagent.id),
-          latestEventId: latestEvent?.id,
+          latestEventCreatedAt: subagent.latestEventCreatedAt ?? undefined,
         };
       })),
     };
   }
 
   async agent(id: string) {
-    await this._requireActiveSubagent(id);
+    await this._requireSubagent(id);
     return this._getOrCreateLiveAgent(id);
   }
 
@@ -404,7 +406,7 @@ export class SubagentManager {
   }
 
   async abortAgent(id: string) {
-    await this._requireActiveSubagent(id);
+    await this._requireSubagent(id);
     const liveSubagent = this._liveSubagents.get(id);
     if (!liveSubagent) {
       throw new Error(`Subagent '${id}' is not live in this server process.`);
@@ -511,7 +513,6 @@ export class SubagentManager {
       name: subagent.name,
       uri: subagentStatusUri(id),
       status: await getSubagentStatus(id),
-      archived: subagent.archived,
       latestEventId: latestEvent?.id,
     };
   }
@@ -535,13 +536,6 @@ export class SubagentManager {
     return subagent;
   }
 
-  private async _requireActiveSubagent(id: string): Promise<Subagent> {
-    const subagent = await this._requireSubagent(id);
-    if (subagent.archived) {
-      throw new ProtocolError(ProtocolErrorCode.ResourceNotFound, `Subagent '${id}' is archived.`);
-    }
-    return subagent;
-  }
 }
 
 let subagentManager: SubagentManager | undefined;
