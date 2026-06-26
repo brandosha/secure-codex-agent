@@ -35,6 +35,13 @@ interface TrelloWebhook {
   callbackURL: string;
 }
 
+interface WatchedTrelloResource {
+  watchId: string;
+  resourceId: string;
+  callbackURL: string;
+  agentId?: string;
+}
+
 interface TrelloCard {
   id?: string;
   name?: string;
@@ -303,6 +310,79 @@ function createTrelloMcpServer(options: TrelloToolOptions, agentRouter: AgentRou
         );
       }
     });
+
+    mcp.registerTool("unwatch_trello_resource", {
+      description: "Stop watching a Trello resource for the current agent. The primary agent may provide agentId to unwatch for a subagent.",
+      inputSchema: z.object({
+        resourceId: z.string().trim().min(1),
+      }),
+    }, async ({ resourceId }, ctx) => {
+      try {
+        const agent = agentRouter.agent(ctx);
+
+        const callbackUrl = state.webhook!.callbackUrl(agent.id);
+        const webhooks = await listTrelloWebhooks(options);
+        const matchingWebhooks = webhooks.filter((webhook) =>
+          webhook.idModel === resourceId
+          && webhook.callbackURL === callbackUrl
+        );
+
+        if (matchingWebhooks.length === 0) {
+          return mcpTextResult(`Trello resource ${resourceId} is not currently being watched.`);
+        }
+
+        await Promise.all(matchingWebhooks.map((webhook) =>
+          makeTrelloApiRequest({
+            method: "DELETE",
+            endpoint: `/webhooks/${encodeURIComponent(webhook.id)}`,
+            apiKey: options.apiKey,
+            token: options.token,
+            clientIdentifier: TRELLO_MCP_CLIENT_IDENTIFIER,
+          })
+        ));
+
+        const deletedWatchIds = matchingWebhooks.map((webhook) => webhook.id);
+        return mcpTextResult(
+          `Stopped watching Trello resource ${resourceId}: ${JSON.stringify(deletedWatchIds)}`,
+        );
+      } catch (err) {
+        return mcpTextResult(
+          `Failed to unwatch Trello resource ${resourceId}: ${err instanceof Error ? err.message : String(err)}`,
+          true,
+        );
+      }
+    });
+
+    mcp.registerTool("list_watched_trello_resources", {
+      description: "List Trello resources currently watched by this agent. The primary agent can see watched resources for all subagents.",
+      inputSchema: z.object({}),
+    }, async (_input, ctx) => {
+      try {
+        const agent = agentRouter.agent(ctx);
+        const webhooks = await listTrelloWebhooks(options);
+        const watchedResources = webhooks
+          .map((webhook) => watchedTrelloResourceFromWebhook(webhook, state.webhook!.callbackUrl))
+          .filter((resource): resource is WatchedTrelloResource => resource !== undefined)
+          .filter((resource) => agent.id === undefined ? true : resource.agentId === agent.id);
+
+        return {
+          isError: false,
+          content: [{
+            type: "resource",
+            resource: {
+              uri: "trello-watched-resources.json",
+              mimeType: "application/json",
+              text: JSON.stringify(watchedResources),
+            },
+          }],
+        };
+      } catch (err) {
+        return mcpTextResult(
+          `Failed to list watched Trello resources: ${err instanceof Error ? err.message : String(err)}`,
+          true,
+        );
+      }
+    });
   }
 
   return mcp;
@@ -330,6 +410,48 @@ export function buildTrelloWebhookCallbackUrl(originHostname: string, agentId?: 
     return `https://${normalizedHostname}/webhook/trello?agentId=${encodeURIComponent(agentId)}`;
   }
   return `https://${normalizedHostname}/webhook/trello`;
+}
+
+function watchedTrelloResourceFromWebhook(
+  webhook: TrelloWebhook,
+  callbackUrl: (agentId?: string) => string,
+): WatchedTrelloResource | undefined {
+  const primaryCallbackUrl = callbackUrl();
+  if (webhook.callbackURL === primaryCallbackUrl) {
+    return {
+      watchId: webhook.id,
+      resourceId: webhook.idModel,
+      callbackURL: webhook.callbackURL,
+    };
+  }
+
+  let webhookUrl: URL;
+  let primaryUrl: URL;
+  try {
+    webhookUrl = new URL(webhook.callbackURL);
+    primaryUrl = new URL(primaryCallbackUrl);
+  } catch {
+    return undefined;
+  }
+
+  if (
+    webhookUrl.origin !== primaryUrl.origin
+    || webhookUrl.pathname !== primaryUrl.pathname
+  ) {
+    return undefined;
+  }
+
+  const agentId = webhookUrl.searchParams.get("agentId") ?? undefined;
+  if (!agentId || callbackUrl(agentId) !== webhook.callbackURL) {
+    return undefined;
+  }
+
+  return {
+    watchId: webhook.id,
+    resourceId: webhook.idModel,
+    callbackURL: webhook.callbackURL,
+    agentId,
+  };
 }
 
 export function verifyTrelloWebhookSignature(params: {
