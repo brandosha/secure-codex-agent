@@ -141,6 +141,8 @@ async def lifespan(app: FastAPI):
                 "--remote-debugging-port=9222",
                 "--no-sandbox",
                 "--disable-gpu",
+                "--proxy-server=http://egress-proxy:10000",
+                "--proxy-bypass-list=<-loopback>;agent;browser;tools;agent.localhost",
                 "--host-resolver-rules=MAP agent.localhost agent",
             ],
         )

@@ -1,0 +1,3 @@
+# Codex
+chatgpt.com:443
+api.openai.com:443

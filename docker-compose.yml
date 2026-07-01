@@ -17,9 +17,15 @@ services:
       - HOST_UID=${HOST_UID}
       - GIT_USER_NAME=${GIT_USER_NAME}
       - GIT_USER_EMAIL=${GIT_USER_EMAIL}
+      - HTTP_PROXY=http://egress-proxy:10000
+      - HTTPS_PROXY=http://egress-proxy:10000
+      - http_proxy=http://egress-proxy:10000
+      - https_proxy=http://egress-proxy:10000
+      - NO_PROXY=localhost,127.0.0.1,::1,agent,browser,tools,agent.localhost
+      - no_proxy=localhost,127.0.0.1,::1,agent,browser,tools,agent.localhost
     networks:
-      - browser-net
-      - tools-net
+      - agent-browser-net
+      - agent-tools-net
   tools:
     build: ./tools
     restart: unless-stopped
@@ -37,6 +43,7 @@ services:
       agent:
         condition: service_healthy
     networks:
+      - agent-tools-net
       - tools-net
   browser:
     build: ./browser
@@ -46,8 +53,22 @@ services:
       - browser-data:/home/agent/.browser-data
     environment:
       - HOST_UID=${HOST_UID}
+      - HTTP_PROXY=http://egress-proxy:10000
+      - HTTPS_PROXY=http://egress-proxy:10000
+      - http_proxy=http://egress-proxy:10000
+      - https_proxy=http://egress-proxy:10000
+      - NO_PROXY=localhost,127.0.0.1,::1,agent,browser,tools,agent.localhost
+      - no_proxy=localhost,127.0.0.1,::1,agent,browser,tools,agent.localhost
     networks:
-      - browser-net
+      - agent-browser-net
+  egress-proxy:
+    build: ./egress-proxy
+    restart: unless-stopped
+    volumes: 
+      - ./egress-proxy/policy:/app/policy:ro
+    networks:
+      - agent-browser-net
+      - egress-net
 
 volumes:
   codex-home:
@@ -55,5 +76,9 @@ volumes:
   browser-data:
 
 networks:
-  browser-net:
+  agent-browser-net:
+    internal: true
+  agent-tools-net:
+    internal: true
   tools-net:
+  egress-net:
