@@ -1,17 +1,23 @@
 import { McpServer } from "@modelcontextprotocol/server";
+import { SocketModeClient } from "@slack/socket-mode";
 import fs from "fs/promises";
 import path from "path";
 import { z } from "zod";
 
 import { mcpTool, WORKSPACE_PATH } from "./base";
+import type { AgentRouter } from "../agent";
 import { redactSecrets } from "../utils";
 
 interface SlackMcpToolOptions {
-  token: string;
+  botToken: string;
+  appToken?: string;
 }
 
 export function slackMcpTool(options: SlackMcpToolOptions) {
-  return mcpTool("slack", createSlackMcpServer(options));
+  return mcpTool("slack", (agentRouter) => {
+    startSlackSocketMode(options, agentRouter);
+    return createSlackMcpServer(options);
+  });
 }
 
 function createSlackMcpServer(options: SlackMcpToolOptions) {
@@ -30,7 +36,7 @@ function createSlackMcpServer(options: SlackMcpToolOptions) {
   }, async (input) => {
     try {
       const response = await makeSlackApiRequest({
-        token: options.token,
+        token: options.botToken,
         method: input.method,
         endpoint: input.endpoint,
         body: input.body,
@@ -41,56 +47,6 @@ function createSlackMcpServer(options: SlackMcpToolOptions) {
       return slackErrorResult("Failed to make Slack API request", err);
     }
   });
-
-  // mcp.registerTool("slack_post_message", {
-  //   description: "Post a message to a Slack channel using chat.postMessage.",
-  //   inputSchema: z.object({
-  //     channel: z.string().describe("Slack channel ID or channel name."),
-  //     text: z.string().describe("Message text to post."),
-  //     thread_ts: z.string().optional().describe("Optional parent message timestamp for thread replies."),
-  //     blocks: z.array(z.record(z.string(), z.any())).optional().describe("Optional Slack Block Kit blocks."),
-  //     unfurl_links: z.boolean().optional(),
-  //     unfurl_media: z.boolean().optional(),
-  //   }),
-  // }, async (input) => {
-  //   try {
-  //     const response = await makeSlackApiRequest({
-  //       token: slackToken,
-  //       method: "POST",
-  //       endpoint: "/chat.postMessage",
-  //       body: input,
-  //     });
-
-  //     return slackJsonResult(response);
-  //   } catch (err) {
-  //     return slackErrorResult("Failed to post Slack message", err);
-  //   }
-  // });
-
-  // mcp.registerTool("slack_get_channel_history", {
-  //   description: "Fetch recent Slack messages from a channel using conversations.history.",
-  //   inputSchema: z.object({
-  //     channel: z.string().describe("Slack channel ID."),
-  //     limit: z.number().int().min(1).max(200).optional(),
-  //     cursor: z.string().optional(),
-  //     latest: z.string().optional(),
-  //     oldest: z.string().optional(),
-  //     inclusive: z.boolean().optional(),
-  //   }),
-  // }, async (input) => {
-  //   try {
-  //     const response = await makeSlackApiRequest({
-  //       token: slackToken,
-  //       method: "GET",
-  //       endpoint: "/conversations.history",
-  //       body: input,
-  //     });
-
-  //     return slackJsonResult(response);
-  //   } catch (err) {
-  //     return slackErrorResult("Failed to fetch Slack channel history", err);
-  //   }
-  // });
 
   mcp.registerTool("slack_upload_file", {
     description: "Upload a file from the workspace directory and share it to one or more Slack channels.",
@@ -107,7 +63,7 @@ function createSlackMcpServer(options: SlackMcpToolOptions) {
   }, async (input) => {
     try {
       const response = await uploadSlackFileFromWorkspace({
-        token: options.token,
+        token: options.botToken,
         filePath: input.file_path,
         channels: normalizeSlackChannels(input.channels),
         filename: input.filename,
@@ -128,8 +84,42 @@ function createSlackMcpServer(options: SlackMcpToolOptions) {
 }
 
 export const SLACK_CLIENT_IDENTIFIER = "SlackAgent";
+export const SLACK_SOCKET_MODE_SOURCE = "slack/socket_mode";
 
 type SlackMethod = "GET" | "POST";
+
+interface SlackSocketModeEventEnvelope {
+  ack: () => Promise<void>;
+  type: string;
+  body?: {
+    event?: SlackSocketEvent;
+    event_id?: string;
+    team_id?: string;
+    authorizations?: unknown[];
+    [key: string]: unknown;
+  };
+  retry_num?: number;
+  retry_reason?: string;
+}
+
+interface SlackSocketEvent {
+  type?: string;
+  subtype?: string;
+  user?: string;
+  bot_id?: string;
+  channel?: string;
+  channel_type?: string;
+  team?: string;
+  text?: string;
+  ts?: string;
+  thread_ts?: string;
+  [key: string]: unknown;
+}
+
+interface SlackBotIdentity {
+  userId?: string;
+  botId?: string;
+}
 
 interface SlackApiRequest {
   token: string;
@@ -166,6 +156,131 @@ interface SlackApiResponse {
     [key: string]: unknown;
   };
   [key: string]: unknown;
+}
+
+let slackSocketModeStarted = false;
+
+function startSlackSocketMode(options: SlackMcpToolOptions, agentRouter: AgentRouter) {
+  if (!options.appToken || slackSocketModeStarted) {
+    return;
+  }
+
+  slackSocketModeStarted = true;
+  const client = new SocketModeClient({
+    appToken: options.appToken,
+    autoReconnectEnabled: true,
+  });
+  const botIdentityPromise = getSlackBotIdentity(options.botToken);
+
+  for (const eventName of ["authenticated", "connected", "reconnecting", "disconnected"]) {
+    client.on(eventName, () => {
+      console.info(`Slack Socket Mode ${eventName}`);
+    });
+  }
+
+  client.on("error", (err) => {
+    console.error(`Slack Socket Mode error: ${err instanceof Error ? err.message : String(err)}`);
+  });
+
+  client.on("slack_event", (envelope: SlackSocketModeEventEnvelope) => {
+    void handleSlackSocketModeEvent(envelope, agentRouter, botIdentityPromise);
+  });
+
+  void client.start().catch((err) => {
+    console.error(`Failed to start Slack Socket Mode: ${err instanceof Error ? err.message : String(err)}`);
+  });
+}
+
+async function getSlackBotIdentity(token: string): Promise<SlackBotIdentity> {
+  try {
+    const response = await makeSlackApiRequest({
+      token,
+      method: "POST",
+      endpoint: "/auth.test",
+    });
+
+    return {
+      userId: typeof response.user_id === "string" ? response.user_id : undefined,
+      botId: typeof response.bot_id === "string" ? response.bot_id : undefined,
+    };
+  } catch (err) {
+    console.warn(`Unable to resolve Slack bot identity: ${err instanceof Error ? err.message : String(err)}`);
+    return {};
+  }
+}
+
+async function handleSlackSocketModeEvent(
+  envelope: SlackSocketModeEventEnvelope,
+  agentRouter: AgentRouter,
+  botIdentityPromise: Promise<SlackBotIdentity>,
+) {
+  try {
+    await envelope.ack();
+  } catch (err) {
+    console.error(`Failed to ack Slack Socket Mode envelope: ${err instanceof Error ? err.message : String(err)}`);
+  }
+
+  if (envelope.type !== "events_api") {
+    return;
+  }
+
+  const event = envelope.body?.event;
+  if (!event) {
+    console.warn("Slack Socket Mode events_api envelope did not contain an event.");
+    return;
+  }
+
+  const botIdentity = await botIdentityPromise;
+  if (!shouldPromptForSlackSocketEvent(event, botIdentity)) {
+    return;
+  }
+
+  agentRouter.agent().prompt(
+    formatSlackSocketPrompt(event, envelope),
+    SLACK_SOCKET_MODE_SOURCE,
+  );
+}
+
+export function shouldPromptForSlackSocketEvent(event: SlackSocketEvent, botIdentity: SlackBotIdentity = {}) {
+  if (isSlackBotOrSelfEvent(event, botIdentity)) {
+    return false;
+  }
+
+  if (event.type === "app_mention") {
+    return true;
+  }
+
+  return event.type === "message" && event.channel_type === "im";
+}
+
+function isSlackBotOrSelfEvent(event: SlackSocketEvent, botIdentity: SlackBotIdentity) {
+  if (event.bot_id) {
+    return true;
+  }
+
+  if (event.subtype) {
+    return true;
+  }
+
+  if (botIdentity.userId && event.user === botIdentity.userId) {
+    return true;
+  }
+
+  return Boolean(botIdentity.botId && event.bot_id === botIdentity.botId);
+}
+
+export function formatSlackSocketPrompt(
+  event: SlackSocketEvent,
+  envelope?: Pick<SlackSocketModeEventEnvelope, "body" | "retry_num" | "retry_reason">,
+) {
+  return [
+    "New Slack event:",
+    JSON.stringify(event),
+    "",
+    "Next steps:",
+    "- Decide whether this needs a response.",
+    "- If responding, use the Slack MCP tools and preserve the channel/thread context above.",
+  ].join("\n");
 }
 
 export class SlackApiError extends Error {
