@@ -10,10 +10,13 @@ import { redactSecrets } from "../../utils";
 
 interface SlackMcpToolOptions {
   botToken: string;
-  appToken?: string;
+  events?: {
+    appToken: string;
+    allowedUserIds?: string[] | string;
+  };
 }
 
-export function slackMcpTool(options: SlackMcpToolOptions) {
+export function slackTool(options: SlackMcpToolOptions) {
   return mcpTool("slack", (agentRouter) => {
     startSlackSocketMode(options, agentRouter);
     return createSlackMcpServer(options);
@@ -161,13 +164,14 @@ interface SlackApiResponse {
 let slackSocketModeStarted = false;
 
 function startSlackSocketMode(options: SlackMcpToolOptions, agentRouter: AgentRouter) {
-  if (!options.appToken || slackSocketModeStarted) {
+  if (!options.events?.appToken || slackSocketModeStarted) {
     return;
   }
 
   slackSocketModeStarted = true;
+  const allowedUserIds = normalizeSlackAllowedUserIds(options.events.allowedUserIds);
   const client = new SocketModeClient({
-    appToken: options.appToken,
+    appToken: options.events.appToken,
     autoReconnectEnabled: true,
   });
   const botIdentityPromise = getSlackBotIdentity(options.botToken);
@@ -183,7 +187,7 @@ function startSlackSocketMode(options: SlackMcpToolOptions, agentRouter: AgentRo
   });
 
   client.on("slack_event", (envelope: SlackSocketModeEventEnvelope) => {
-    void handleSlackSocketModeEvent(envelope, agentRouter, botIdentityPromise);
+    void handleSlackSocketModeEvent(envelope, agentRouter, botIdentityPromise, allowedUserIds);
   });
 
   void client.start().catch((err) => {
@@ -213,6 +217,7 @@ async function handleSlackSocketModeEvent(
   envelope: SlackSocketModeEventEnvelope,
   agentRouter: AgentRouter,
   botIdentityPromise: Promise<SlackBotIdentity>,
+  allowedUserIds?: ReadonlySet<string>,
 ) {
   try {
     await envelope.ack();
@@ -231,7 +236,7 @@ async function handleSlackSocketModeEvent(
   }
 
   const botIdentity = await botIdentityPromise;
-  if (!shouldPromptForSlackSocketEvent(event, botIdentity)) {
+  if (!shouldPromptForSlackSocketEvent(event, botIdentity, allowedUserIds)) {
     return;
   }
 
@@ -241,8 +246,16 @@ async function handleSlackSocketModeEvent(
   );
 }
 
-export function shouldPromptForSlackSocketEvent(event: SlackSocketEvent, botIdentity: SlackBotIdentity = {}) {
+export function shouldPromptForSlackSocketEvent(
+  event: SlackSocketEvent,
+  botIdentity: SlackBotIdentity = {},
+  allowedUserIds?: ReadonlySet<string>,
+) {
   if (isSlackBotOrSelfEvent(event, botIdentity)) {
+    return false;
+  }
+
+  if (allowedUserIds && (!event.user || !allowedUserIds.has(event.user))) {
     return false;
   }
 
@@ -251,6 +264,19 @@ export function shouldPromptForSlackSocketEvent(event: SlackSocketEvent, botIden
   }
 
   return event.type === "message" && event.channel_type === "im";
+}
+
+export function normalizeSlackAllowedUserIds(allowedUserIds?: string[] | string) {
+  if (allowedUserIds === undefined) {
+    return undefined;
+  }
+
+  const normalized = (Array.isArray(allowedUserIds) ? allowedUserIds : [allowedUserIds])
+    .flatMap(userIds => userIds.split(","))
+    .map(userId => userId.trim())
+    .filter(Boolean);
+
+  return normalized.length > 0 ? new Set(normalized) : undefined;
 }
 
 function isSlackBotOrSelfEvent(event: SlackSocketEvent, botIdentity: SlackBotIdentity) {

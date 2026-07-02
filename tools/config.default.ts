@@ -7,7 +7,7 @@ import {
   remindersTool,
   resourceLockMcpTool,
   scheduleMcpTool,
-  slackMcpTool,
+  slackTool,
   trelloTool,
 } from "./src/tools";
 
@@ -32,9 +32,12 @@ agentTools([
   //   originHostname: process.env.TRELLO_WEBHOOK_HOSTNAME,
   // }),
   //
-  // slackMcpTool({
+  // slackTool({
   //   botToken: process.env.SLACK_BOT_TOKEN!,
-  //   appToken: process.env.SLACK_APP_TOKEN!,
+  //   events: {
+  //     appToken: process.env.SLACK_APP_TOKEN!,
+  //     allowedUserIds: process.env.SLACK_ALLOWED_USER_IDS,
+  //   },
   // }),
   //
   // newRelicMcpTool({
