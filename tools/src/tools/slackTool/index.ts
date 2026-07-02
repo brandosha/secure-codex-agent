@@ -4,9 +4,9 @@ import fs from "fs/promises";
 import path from "path";
 import { z } from "zod";
 
-import { mcpTool, WORKSPACE_PATH } from "./base";
-import type { AgentRouter } from "../agent";
-import { redactSecrets } from "../utils";
+import { mcpTool, WORKSPACE_PATH } from "../base";
+import type { AgentRouter } from "../../agent";
+import { redactSecrets } from "../../utils";
 
 interface SlackMcpToolOptions {
   botToken: string;
