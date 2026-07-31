@@ -1,0 +1,1 @@
+pnpm update @openai/codex @openai/codex-sdk --latest

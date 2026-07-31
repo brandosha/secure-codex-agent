@@ -63,3 +63,13 @@ If outbound access fails:
 3. Check Envoy logs with `docker compose logs egress-proxy`.
 4. Add the narrowest exact domain needed by the denied request, then restart
    the proxy with `docker compose restart egress-proxy`.
+
+
+## Updating Codex
+
+To update Codex dependencies in a running container, run the `update-codex.sh` script in the `agent` service:
+
+```sh
+docker compose exec agent ./update-codex.sh
+```
+

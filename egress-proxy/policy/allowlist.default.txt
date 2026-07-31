@@ -2,3 +2,6 @@
 chatgpt.com:443
 api.openai.com:443
 auth.openai.com:443
+
+# npm
+registry.npmjs.org:443
