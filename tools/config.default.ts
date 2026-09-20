@@ -51,4 +51,9 @@ agentTools([
   //   password: "",
   //   database: "app",
   // }),
-]);
+], {
+  // Optional defaults for the main agent and all subagents.
+  // See https://learn.chatgpt.com/docs/models for current model IDs.
+  // model: "gpt-5.6-terra",
+  // reasoningEffort: "medium", // minimal, low, medium, high, or xhigh
+});

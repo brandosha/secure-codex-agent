@@ -1,5 +1,27 @@
 # secure-codex-agent
 
+## Model configuration
+
+Copy `tools/config.default.ts` to `tools/config.ts`, then set the optional
+second argument to `agentTools`:
+
+```ts
+agentTools([/* your tools */], {
+  model: "gpt-5.6-terra",
+  reasoningEffort: "medium",
+});
+```
+
+Find current model IDs in the [official Codex model list](https://learn.chatgpt.com/docs/models).
+Availability depends on your account and sign-in method.
+
+`reasoningEffort` accepts `minimal`, `low`, `medium`, `high`, or `xhigh`. Omit either setting to use the Codex default for it. The
+chosen model must support the reasoning effort you select.
+
+The tools service watches `tools/config.ts` and restarts its process when the
+file changes. The agent container stays running; new settings apply on the next
+prompt, including prompts in existing threads.
+
 ## Tool configuration
 
 The tools service loads `tools/config.ts` when it exists. If it does not exist,
@@ -72,4 +94,3 @@ To update Codex dependencies in a running container, run the `update-codex.sh` s
 ```sh
 docker compose exec agent ./update-codex.sh
 ```
-

@@ -34,6 +34,13 @@ const websocketRequestSchema = z.discriminatedUnion("type", [
   z.object({
     type: z.literal("mcp_registry"),
     mcpServers: z.record(z.string(), mcpServerRegistryEntrySchema),
+  }),
+  z.object({
+    type: z.literal("agent_config"),
+    config: z.object({
+      model: z.string().trim().min(1).optional(),
+      modelReasoningEffort: z.enum(["minimal", "low", "medium", "high", "xhigh"]).optional(),
+    }),
   })
 ]);
 
@@ -110,6 +117,8 @@ app.get("/", upgradeWebSocket(async (c) => {
         try {
           if (data.type === "mcp_registry") {
             agentRegistry.setExternalMcpRegistry(data.mcpServers);
+          } else if (data.type === "agent_config") {
+            agentRegistry.setModelConfig(data.config);
           } else if (data.type === "abort") {
             await ensureSubscribed(data.agentId);
             await agentRegistry.abort(data.agentId);

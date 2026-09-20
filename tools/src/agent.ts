@@ -1,5 +1,5 @@
 import type { ServerContext } from "@modelcontextprotocol/server";
-import type { ThreadEvent } from "@openai/codex-sdk";
+import type { ThreadEvent, ThreadOptions } from "@openai/codex-sdk";
 import { desc } from "drizzle-orm";
 import { WebSocket } from "ws";
 import { z } from "zod";
@@ -35,6 +35,8 @@ export interface McpServerRegistryEntry {
 
 export type McpServerRegistry = Record<string, McpServerRegistryEntry>;
 
+export type AgentModelConfig = Pick<ThreadOptions, "model" | "modelReasoningEffort">;
+
 const SUBAGENT_ID_HEADER = "X-Subagent-Id";
 const AGENT_ID_PATTERN = /^[a-zA-Z0-9_-]{1,63}$/;
 
@@ -44,13 +46,15 @@ export class AgentRouter {
   private _agents = new Map<AgentId, Agent>();
   private _connection: AgentConnection;
   private _mcpRegistry?: McpServerRegistry;
+  private _modelConfig: AgentModelConfig = {};
 
   constructor(address: string) {
     this._connection = new AgentConnection(address, (agentId, event) => {
       this.agent(agentId).recordAndPublish(event);
-    }, () => {
+    }, (ws) => {
+      ws.send(JSON.stringify({ type: "agent_config", config: this._modelConfig }));
       if (this._mcpRegistry) {
-        this._connection.send({ type: "mcp_registry", mcpServers: this._mcpRegistry });
+        ws.send(JSON.stringify({ type: "mcp_registry", mcpServers: this._mcpRegistry }));
       }
     });
   }
@@ -72,6 +76,11 @@ export class AgentRouter {
   configureMcpRegistry(mcpServers: McpServerRegistry) {
     this._mcpRegistry = mcpServers;
     this._connection.send({ type: "mcp_registry", mcpServers });
+  }
+
+  configureModel(config: AgentModelConfig) {
+    this._modelConfig = config;
+    this._connection.send({ type: "agent_config", config });
   }
 }
 
@@ -118,7 +127,7 @@ class AgentConnection {
   constructor(
     address: string,
     private _onEvent: (agentId: string | undefined, event: AgentEvent) => void,
-    private _onOpen: () => void,
+    private _onOpen: (ws: WebSocket) => void,
   ) {
     this._connect(address);
   }
@@ -129,11 +138,11 @@ class AgentConnection {
 
     ws.on("open", () => {
       console.log(`Connected to agent websocket at ${address}`);
+      this._onOpen(ws);
       for (const resolve of this._readyWaiters) {
         resolve(ws);
       }
       this._readyWaiters.clear();
-      this._onOpen();
     });
 
     ws.on("message", (data) => {
@@ -249,6 +258,13 @@ const websocketRequestSchema = z.discriminatedUnion("type", [
   z.object({
     type: z.literal("mcp_registry"),
     mcpServers: z.record(z.string(), mcpServerRegistryEntrySchema),
+  }),
+  z.object({
+    type: z.literal("agent_config"),
+    config: z.object({
+      model: z.string().optional(),
+      modelReasoningEffort: z.enum(["minimal", "low", "medium", "high", "xhigh"]).optional(),
+    }),
   })
 ]);
 

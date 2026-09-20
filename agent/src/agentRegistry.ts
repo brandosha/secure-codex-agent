@@ -1,4 +1,4 @@
-import type { ThreadEvent } from "@openai/codex-sdk";
+import type { ThreadEvent, ThreadOptions } from "@openai/codex-sdk";
 
 import { getMainAgent, optionsWithMcpServers, type PromptOptions } from "./agent";
 import { getSubagentManager, setSubagentPromptOptionsBuilder, subagentMcpServerConfig } from "./subagents";
@@ -13,6 +13,7 @@ export type McpServerRegistry = Record<string, McpServerRegistryEntry>;
 export class AgentRegistry {
   private _mainAgent = getMainAgent();
   private _externalMcpRegistry: McpServerRegistry = {};
+  private _modelConfig: Pick<ThreadOptions, "model" | "modelReasoningEffort"> = {};
 
   constructor() {
     setSubagentPromptOptionsBuilder((id, options) => this.promptOptionsForAgent(id, options));
@@ -20,6 +21,10 @@ export class AgentRegistry {
 
   setExternalMcpRegistry(registry: McpServerRegistry) {
     this._externalMcpRegistry = registry;
+  }
+
+  setModelConfig(config: Pick<ThreadOptions, "model" | "modelReasoningEffort">) {
+    this._modelConfig = config;
   }
 
   async agent(id?: string) {
@@ -54,6 +59,13 @@ export class AgentRegistry {
   }
 
   promptOptionsForAgent(id: string | undefined, options: PromptOptions = {}) {
+    options = {
+      ...options,
+      thread: {
+        ...this._modelConfig,
+        ...options.thread,
+      },
+    };
     const externalMcpServers = this._externalMcpServersForAgent(id);
     if (id) {
       return optionsWithMcpServers(options, externalMcpServers);

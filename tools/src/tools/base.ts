@@ -1,7 +1,7 @@
 import { McpServer, WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/server";
 import { Context, Hono } from "hono";
 
-import { Agent, AgentRouter, type McpServerRegistry } from "../agent";
+import { Agent, AgentRouter, type AgentModelConfig, type McpServerRegistry } from "../agent";
 import { startServer } from "../server";
 
 export const WORKSPACE_PATH = "/home/agent/workspace";
@@ -74,8 +74,20 @@ export function webhookTool(
   });
 }
 
-export function agentTools(tools: Tool[]) {
+export interface AgentToolsOptions {
+  model?: string;
+  reasoningEffort?: "minimal" | "low" | "medium" | "high" | "xhigh";
+}
+
+export function agentTools(tools: Tool[], options: AgentToolsOptions = {}) {
   const agentRouter = new AgentRouter("ws://agent");
+  const modelConfig: AgentModelConfig = {
+    ...(options.model ? { model: options.model } : {}),
+    ...(options.reasoningEffort ? {
+      modelReasoningEffort: options.reasoningEffort,
+    } : {}),
+  };
+  agentRouter.configureModel(modelConfig);
   const mcpServersConfig: McpServerRegistry = {}
   const publicApp = new Hono();
   const mcpApp = new Hono();

@@ -21,6 +21,7 @@ WORKDIR /app
 # Install dependencies
 COPY package*.json pnpm-lock.yaml pnpm-workspace.yaml ./
 RUN pnpm install --frozen-lockfile
+ENV PATH="/app/node_modules/.bin:$PATH"
 
 # Copy the rest of the application code
 COPY . .
